@@ -1,26 +1,2 @@
 @import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+*{box-sizing:border-box}body{margin:0;background:#edf4f2;color:#0f172a}button,input,select,textarea{font:inherit}button{cursor:pointer}.input{width:100%;border-radius:1rem;border:1px solid #cbd5e1;background:#fff;padding:.75rem 1rem;outline:none}.input:focus{border-color:#059669;box-shadow:0 0 0 4px #0596691f}.btn{display:inline-flex;align-items:center;justify-content:center;border-radius:1rem;padding:.75rem 1rem;font-weight:900}.primary{background:#0f172a;color:white}.primary:hover{background:#064e3b}.secondary{border:1px solid #cbd5e1;background:white}.small{padding:.5rem .75rem;font-size:.75rem}.card{border:1px solid white;border-radius:2rem;background:#ffffffe8;padding:1.5rem;box-shadow:0 10px 30px #0f172a0f}.title{font-size:clamp(1.8rem,4vw,3rem);font-weight:900;letter-spacing:-.04em}.eyebrow{font-size:.7rem;font-weight:900;letter-spacing:.2em;text-transform:uppercase;color:#047857}.table{overflow-x:auto;border-radius:2rem;background:white}.table table{width:100%;min-width:720px;border-collapse:collapse;text-align:left;font-size:.875rem}.table thead{background:#0f172a;color:white}.table th,.table td{padding:1rem}.table tbody tr+tr{border-top:1px solid #e2e8f0}.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem}@media(min-width:768px){.metrics{grid-template-columns:repeat(4,1fr)}}
