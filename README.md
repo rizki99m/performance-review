@@ -29,9 +29,9 @@ Hierarchy connections create review assignments in both directions. The question
 For example, if Budi is Andi's manager:
 
 | Reviewer | Person being reviewed | Question template |
-|---|---|---|
-| Andi | Budi | Manager |
-| Budi | Andi | Subordinate |
+| -------- | --------------------- | ----------------- |
+| Andi     | Budi                  | Manager           |
+| Budi     | Andi                  | Subordinate       |
 
 Peer relationships use the Peer template in both directions. Every selected participant also receives a Self assignment.
 
@@ -55,84 +55,3 @@ Users can complete assigned reviews, save drafts, submit answers, edit submitted
 - `@neondatabase/serverless`
 - `bcryptjs`
 - pnpm
-
-## Local setup
-
-### Prerequisites
-
-- Node.js 20 or newer
-- pnpm
-- A Neon PostgreSQL database
-
-### 1. Install dependencies
-
-```bash
-pnpm install
-```
-
-### 2. Configure the environment
-
-Copy the example environment file:
-
-```powershell
-Copy-Item .env.example .env.local
-```
-
-For macOS or Linux:
-
-```bash
-cp .env.example .env.local
-```
-
-Set the Neon connection string in `.env.local`:
-
-```env
-DATABASE_URL=postgresql://user:password@host/database?sslmode=require
-```
-
-Never commit `.env.local` or real database credentials.
-
-### 3. Initialize the database
-
-Run [`database/schema.sql`](database/schema.sql) against an empty Neon database. This file is the authoritative database contract and creates the tables, constraints, indexes, triggers, views, default question templates, and supporting functions required by the application.
-
-Create the first Admin account directly in PostgreSQL using a bcrypt password hash. After logging in, additional users can be managed from the **Users** page.
-
-### 4. Start the development server
-
-```bash
-pnpm dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-## Available commands
-
-```bash
-pnpm dev            # Start the development server
-pnpm lint           # Run ESLint
-pnpm exec tsc --noEmit
-pnpm build          # Create a production build
-pnpm start          # Run the production server
-```
-
-## Data and security notes
-
-- Database credentials are used only by server-side code.
-- Protected routes redirect unauthenticated visitors to `/login`.
-- Authorization and review deadlines are enforced by backend APIs, not only by disabled UI controls.
-- Question templates are copied into each Performance Review as snapshots so later template edits do not alter historical reviews.
-- Employee-facing results do not expose reviewer names or reviewer IDs.
-- Performance Review deletion is restricted to Admin accounts and removes related data atomically.
-- There is no browser mock-data fallback; database connection errors are shown explicitly.
-
-## Product documentation
-
-- [`PRODUCT_REQUIREMENTS.md`](PRODUCT_REQUIREMENTS.md) — product behavior and V1 scope
-- [`DESIGN_REQUIREMENTS.md`](DESIGN_REQUIREMENTS.md) — visual and interaction requirements
-- [`AGENTS.md`](AGENTS.md) — repository rules for coding agents and contributors
-- [`database/schema.sql`](database/schema.sql) — PostgreSQL schema and database rules
-
-## Current scope
-
-This repository targets a focused Performance Review V1. Features such as development plans, reminders, weighted scoring, configurable rating scales, Excel export, HRIS integration, and employee profile self-service are intentionally outside the current scope.
