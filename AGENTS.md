@@ -109,11 +109,9 @@ There are only two system roles:
 
 Do not add the following unless explicitly requested in the future:
 
-- anonymous reviews
 - development plans
 - email reminders
 - advanced analytics
-- PDF export
 - Excel export
 - department management
 - employee self-service profile editing
@@ -124,6 +122,10 @@ Do not add the following unless explicitly requested in the future:
 - HRIS features outside Performance Review
 
 The current target is a focused, reliable Performance Review V1.
+
+Reviewer identity confidentiality and print-ready PDF result export are part of the current requested V1 scope. Employee-facing and exported results must identify sources only by relationship and sequence, such as `Manager`, `Peer 1`, or `Subordinate 2`.
+
+Admin accounts may participate as Reviewers and Reviewees while retaining administrative capabilities.
 
 ## Database Source of Truth
 
@@ -146,3 +148,13 @@ The actual Neon connection string must only come from:
 stored in `.env.local`.
 
 Never commit `.env.local` or any real database credentials.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

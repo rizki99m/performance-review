@@ -44,6 +44,8 @@ Admin represents HR.
 
 Admin has access to administrative features and all review data.
 
+Admin accounts may also participate as Reviewers and Reviewees. They receive the same **My Reviews** and **Reviews About Me** capabilities as normal Users while retaining administrative access.
+
 ### USER
 
 A normal employee account.
@@ -132,6 +134,8 @@ Historical reviews must remain intact and readable.
 ## 4. Performance Review
 
 Admin creates and manages Performance Reviews.
+
+Admin may permanently delete a Performance Review. Deletion is an Admin-only destructive action, requires explicit confirmation, and removes its assignments, answers, and question snapshot atomically.
 
 Each Performance Review contains:
 
@@ -239,9 +243,11 @@ The self-review relationship does not need to be manually selected by HR for eve
 
 ## 7. Reviewer Assignment
 
-Admin determines who will review each Reviewee.
+Admin configures a User's hierarchy by selecting that User's Manager, Peers, and Subordinates.
 
-Admin also determines the relationship between Reviewer and Reviewee.
+Participant and hierarchy selectors must support searchable user selection and exclude users that have already been selected. Related hierarchy users do not need to be selected as self-review participants.
+
+Each hierarchy connection generates reciprocal review assignments. The stored relationship describes the Reviewee's position relative to the Reviewer and determines which question template the Reviewer receives.
 
 Supported relationship types:
 
@@ -257,9 +263,12 @@ Example:
 | Reviewer | Reviewee | Relationship |
 |---|---|---|
 | Andi | Andi | SELF |
-| Budi | Andi | MANAGER |
-| Caca | Andi | PEER |
-| Deni | Andi | SUBORDINATE |
+| Andi | Budi (Andi's manager) | MANAGER |
+| Budi | Andi (Budi's subordinate) | SUBORDINATE |
+| Andi | Caca (Andi's peer) | PEER |
+| Caca | Andi (Caca's peer) | PEER |
+| Andi | Deni (Andi's subordinate) | SUBORDINATE |
+| Deni | Andi (Deni's manager) | MANAGER |
 
 The same User can have different relationships in different review assignments.
 
@@ -405,6 +414,8 @@ The Reviewer also cannot edit after closure.
 
 Admin can view all reviews.
 
+Reviewer identity remains visible to Admin for operational administration, but generated employee result reports must remain anonymous.
+
 ---
 
 ## 13. Question Templates
@@ -422,10 +433,10 @@ Required template categories:
 
 Relationship mapping:
 
-- `SELF`
-- `MANAGER`
-- `PEER`
-- `SUBORDINATE`
+- Reviewer reviewing themselves uses `SELF`.
+- Reviewer reviewing their manager uses `MANAGER`.
+- Reviewer reviewing their peer uses `PEER`.
+- Reviewer reviewing their subordinate uses `SUBORDINATE`.
 
 Templates are starting points for Performance Reviews.
 
@@ -525,6 +536,9 @@ Recommended items:
 - Users
 - Performance Reviews
 - Question Templates
+- My Reviews
+- Reviews About Me
+- Review Results
 - Logout
 
 ### Dashboard
@@ -539,6 +553,10 @@ Admin Dashboard may show high-level review monitoring such as:
 - completion progress
 
 Avoid advanced analytics in V1.
+
+### Review Results
+
+Admin can select a Performance Review and Reviewee to open a consolidated, print-ready report. The report groups submitted feedback by source relationship without reviewer names and supports browser-based PDF export.
 
 ---
 
@@ -599,6 +617,9 @@ Admin can:
 - view all reviews
 - monitor completion
 - manage review configuration
+- participate as a Reviewer or Reviewee
+- view anonymized per-employee result reports
+- export a print-ready result report to PDF
 
 ### USER
 
@@ -612,6 +633,8 @@ User can:
 - submit completed reviews
 - edit submitted reviews before deadline
 - view own incoming review results after Performance Review is closed
+
+Reviewer identities are confidential in employee-facing results. Results use relationship labels such as `Manager`, `Peer 1`, `Peer 2`, or `Subordinate 1` instead of names. The same anonymity applies to exported reports.
 
 User cannot:
 
@@ -628,7 +651,6 @@ User cannot:
 
 The following are intentionally excluded from V1 unless explicitly requested later:
 
-- anonymous feedback
 - configurable anonymity rules
 - development plans
 - goal tracking
@@ -638,7 +660,6 @@ The following are intentionally excluded from V1 unless explicitly requested lat
 - calibration
 - weighted scoring
 - configurable rating scales
-- PDF export
 - Excel export
 - organizational department management
 - automatic organization hierarchy

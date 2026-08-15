@@ -117,6 +117,9 @@ Recommended:
 - Users
 - Performance Reviews
 - Question Templates
+- My Reviews
+- Reviews About Me
+- Review Results
 - Logout
 
 ### User Navigation
@@ -129,6 +132,8 @@ Recommended:
 - Logout
 
 Do not show Admin-only navigation to normal Users.
+
+The desktop sidebar can collapse and expand. Both desktop and mobile sidebars must scroll independently when navigation exceeds the viewport, without making profile and logout controls unreachable.
 
 ---
 
@@ -183,7 +188,7 @@ Manage employee accounts used in Performance Review.
 User table
 ```
 
-Avoid unnecessary visual complexity.
+Avoid unnecessary visual complexity. Page headers do not require gray supporting subtitles unless the content genuinely needs clarification.
 
 ---
 
@@ -216,6 +221,8 @@ Typical secondary actions include:
 - View
 
 Destructive actions should be visually distinct and used carefully.
+
+Do not use native browser alert or confirm dialogs. Destructive confirmation must use an application-styled modal with backdrop, clear title, consequence text, Cancel action, destructive action, and loading state.
 
 ---
 
@@ -389,6 +396,8 @@ Relationships:
 SELF can be automatically generated.
 
 Avoid making HR work with raw IDs or technical database concepts.
+
+Participant and hierarchy selection must use a searchable popup picker rather than rendering every user or relying on a long native select. Already selected users must be excluded from subsequent search results.
 
 ---
 
@@ -666,6 +675,8 @@ Tables may adapt into horizontally scrollable or stacked layouts if consistent w
 ## 26. Empty States
 
 Use clear empty states.
+
+Empty lists across Dashboard, Users, Performance Reviews, Question Templates, My Reviews, and Reviews About Me use the same visual component headed `Data Tidak Ada`, followed by a short context-specific explanation.
 
 Examples:
 

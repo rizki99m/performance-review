@@ -487,6 +487,11 @@ BEGIN
     FROM performance_reviews
     WHERE id = v_review_id;
 
+    -- Admin deletion removes the immutable snapshot together with its review.
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+
     IF v_status IS NULL THEN
         RAISE EXCEPTION 'Performance Review not found.';
     END IF;
@@ -496,10 +501,6 @@ BEGIN
     THEN
         RAISE EXCEPTION
             'Questions cannot be modified after the Performance Review has started.';
-    END IF;
-
-    IF TG_OP = 'DELETE' THEN
-        RETURN OLD;
     END IF;
 
     RETURN NEW;
