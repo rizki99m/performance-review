@@ -2,11 +2,43 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/static-components */
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { addAssignment, ClientApiError, createReview, deleteQuestion, deleteReview, editable, loadData, login, logout, reorderQuestions, saveAnswers, updateReview, updateReviewStatus, upsertQuestion, upsertUser, type RelationshipLink } from "@/lib/service";
-import { AppData, Assignment, PerformanceReview, Question, QuestionType, Relationship, User } from "@/lib/types";
+import {
+  addAssignment,
+  ClientApiError,
+  createReview,
+  deleteQuestion,
+  deleteReview,
+  editable,
+  loadData,
+  login,
+  logout,
+  reorderQuestions,
+  saveAnswers,
+  updateReview,
+  upsertQuestion,
+  upsertUser,
+  type RelationshipLink,
+} from "@/lib/service";
+import {
+  AppData,
+  Assignment,
+  PerformanceReview,
+  Question,
+  QuestionType,
+  Relationship,
+  User,
+} from "@/lib/types";
 
-type View="dashboard"|"users"|"reviews"|"templates"|"mine"|"received"|"results"; type Common={data:AppData;refresh:()=>Promise<void>};
-const rels:Relationship[]=["SELF","MANAGER","PEER","SUBORDINATE"];
+type View =
+  | "dashboard"
+  | "users"
+  | "reviews"
+  | "templates"
+  | "mine"
+  | "received"
+  | "results";
+type Common = { data: AppData; refresh: () => Promise<void> };
+const rels: Relationship[] = ["SELF", "MANAGER", "PEER", "SUBORDINATE"];
 export function App() {
   const [data, setData] = useState<AppData | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -15,130 +47,2337 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [authChecked, setAuthChecked] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
 
   useEffect(() => {
     loadData()
-      .then(({data:d,user:u}) => { setData(d); setUser(u); setAuthChecked(true); })
-      .catch(error => {
-        if (error instanceof ClientApiError && error.status === 401) { window.location.replace("/login"); return; }
-        setLoadError(error instanceof Error ? error.message : "Unable to load application.");
+      .then(({ data: d, user: u }) => {
+        setData(d);
+        setUser(u);
+        setAuthChecked(true);
+      })
+      .catch((error) => {
+        if (error instanceof ClientApiError && error.status === 401) {
+          window.location.replace("/login");
+          return;
+        }
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load application.",
+        );
         setAuthChecked(true);
       });
     setSidebarOpen(sessionStorage.getItem("doki-sidebar-open") !== "false");
   }, []);
 
+  const userId = user?.id;
+
+  useEffect(() => {
+    if (!authChecked || !userId) return;
+
+    let inFlight = false;
+
+    const refetch = async () => {
+      if (inFlight) return;
+
+      inFlight = true;
+
+      try {
+        const result = await loadData();
+
+        setData(result.data);
+        setUser(result.user);
+        setRefreshError("");
+      } catch (error) {
+        if (error instanceof ClientApiError && error.status === 401) {
+          window.location.replace("/login");
+          return;
+        }
+
+        setRefreshError(
+          error instanceof Error
+            ? error.message
+            : "Unable to refresh Performance Review status.",
+        );
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void refetch();
+    }, 10_000);
+
+    const handleFocus = () => {
+      void refetch();
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void refetch();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [authChecked, userId]);
+
   const toggleSidebar = (open: boolean) => {
     setSidebarOpen(open);
     sessionStorage.setItem("doki-sidebar-open", String(open));
   };
-  const refresh = async () => { const result=await loadData(); setData(result.data); setUser(result.user); };
-  if (!authChecked) return <main className="grid min-h-screen place-items-center"><span className="font-bold text-slate-500">Loading...</span></main>;
-  if (loadError) return <main className="grid min-h-screen place-items-center p-4"><div className="card max-w-lg"><h1 className="text-2xl font-black">Unable to connect</h1><p className="mt-3 text-slate-600">{loadError}</p><button className="btn primary mt-5" onClick={() => location.reload()}>Try Again</button></div></main>;
-  if (!user) return <main className="grid min-h-screen place-items-center"><span className="font-bold text-slate-500">Redirecting to login...</span></main>;
-  if (!data) return <main className="grid min-h-screen place-items-center"><span className="font-bold text-slate-500">Loading...</span></main>;
+  const refresh = async () => {
+    const result = await loadData();
+    setData(result.data);
+    setUser(result.user);
+    setRefreshError("");
+  };
+  if (!authChecked)
+    return (
+      <main className="grid min-h-screen place-items-center">
+        <span className="font-bold text-slate-500">Loading...</span>
+      </main>
+    );
+  if (loadError)
+    return (
+      <main className="grid min-h-screen place-items-center p-4">
+        <div className="card max-w-lg">
+          <h1 className="text-2xl font-black">Unable to connect</h1>
+          <p className="mt-3 text-slate-600">{loadError}</p>
+          <button
+            className="btn primary mt-5"
+            onClick={() => location.reload()}
+          >
+            Try Again
+          </button>
+        </div>
+      </main>
+    );
+  if (!user)
+    return (
+      <main className="grid min-h-screen place-items-center">
+        <span className="font-bold text-slate-500">
+          Redirecting to login...
+        </span>
+      </main>
+    );
+  if (!data)
+    return (
+      <main className="grid min-h-screen place-items-center">
+        <span className="font-bold text-slate-500">Loading...</span>
+      </main>
+    );
 
   const admin = user.role === "ADMIN";
-  const nav = (admin
-    ? [["dashboard", "Dashboard"], ["users", "Users"], ["reviews", "Performance Reviews"], ["templates", "Question Templates"], ["mine", "My Reviews"], ["received", "Reviews About Me"], ["results", "Review Results"]]
-    : [["dashboard", "Dashboard"], ["mine", "My Reviews"], ["received", "Reviews About Me"]]) as [View, string][];
-  const content = admin
-    ? view === "users" ? <Users data={data} refresh={refresh} />
-      : view === "reviews" ? <Reviews data={data} refresh={refresh} />
-      : view === "templates" ? <Templates data={data} refresh={refresh} />
-      : view === "mine" ? <Mine data={data} user={user} refresh={refresh} />
-      : view === "received" ? <Received data={data} user={user} />
-      : view === "results" ? <Results data={data} />
-      : <Dashboard data={data} user={user} />
-    : view === "mine" ? <Mine data={data} user={user} refresh={refresh} />
-      : view === "received" ? <Received data={data} user={user} />
-      : <Dashboard data={data} user={user} />;
+  const nav = (
+    admin
+      ? [
+          ["dashboard", "Dashboard"],
+          ["users", "Users"],
+          ["reviews", "Performance Reviews"],
+          ["templates", "Question Templates"],
+          ["mine", "My Reviews"],
+          ["received", "Reviews About Me"],
+          ["results", "Review Results"],
+        ]
+      : [
+          ["dashboard", "Dashboard"],
+          ["mine", "My Reviews"],
+          ["received", "Reviews About Me"],
+        ]
+  ) as [View, string][];
+  const content = admin ? (
+    view === "users" ? (
+      <Users data={data} refresh={refresh} />
+    ) : view === "reviews" ? (
+      <Reviews data={data} refresh={refresh} />
+    ) : view === "templates" ? (
+      <Templates data={data} refresh={refresh} />
+    ) : view === "mine" ? (
+      <Mine data={data} user={user} refresh={refresh} />
+    ) : view === "received" ? (
+      <Received data={data} user={user} />
+    ) : view === "results" ? (
+      <Results data={data} />
+    ) : (
+      <Dashboard data={data} user={user} refresh={refresh} />
+    )
+  ) : view === "mine" ? (
+    <Mine data={data} user={user} refresh={refresh} />
+  ) : view === "received" ? (
+    <Received data={data} user={user} />
+  ) : (
+    <Dashboard data={data} user={user} refresh={refresh} />
+  );
 
-  const Side = ({ collapsible = false, mobile = false }: { collapsible?: boolean; mobile?: boolean }) => (
+  const Side = ({
+    collapsible = false,
+    mobile = false,
+  }: {
+    collapsible?: boolean;
+    mobile?: boolean;
+  }) => (
     <aside className="flex h-full min-h-0 flex-col overflow-y-auto bg-white px-7 py-8">
       <div className="shrink-0 flex items-start justify-between gap-4">
         <Brand sidebar />
-        {collapsible && <button className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-md shadow-slate-200/60 transition hover:-translate-y-0.5 hover:border-slate-300 hover:text-slate-950" onClick={() => toggleSidebar(false)} aria-label="Collapse sidebar" title="Collapse sidebar"><SidebarCollapseIcon /></button>}
-        {mobile && <button className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-md shadow-slate-200/60" onClick={() => setMenu(false)} aria-label="Close sidebar" title="Close sidebar"><CloseIcon /></button>}
+        {collapsible && (
+          <button
+            className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-md shadow-slate-200/60 transition hover:-translate-y-0.5 hover:border-slate-300 hover:text-slate-950"
+            onClick={() => toggleSidebar(false)}
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
+          >
+            <SidebarCollapseIcon />
+          </button>
+        )}
+        {mobile && (
+          <button
+            className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-md shadow-slate-200/60"
+            onClick={() => setMenu(false)}
+            aria-label="Close sidebar"
+            title="Close sidebar"
+          >
+            <CloseIcon />
+          </button>
+        )}
       </div>
-      <nav className="mt-10 shrink-0 space-y-2">{nav.map(([k, l]) => <button key={k} onClick={() => { setView(k); setMenu(false); }} className={`block w-full rounded-2xl px-4 py-3 text-left text-sm font-black ${view === k ? "bg-slate-950 text-white" : "hover:bg-slate-100"}`}>{l}</button>)}</nav>
-      <div className="mt-8 shrink-0 rounded-3xl bg-slate-950 p-5 text-white"><b>{user.name}</b><p className="mt-1 text-xs uppercase tracking-widest text-slate-400">{user.role} - {user.position}</p><button className="mt-4 w-full rounded-xl bg-white p-2 font-black text-slate-950" onClick={async () => { await logout(); setUser(null); setData(null); location.reload(); }}>Logout</button></div>
+      <nav className="mt-10 shrink-0 space-y-2">
+        {nav.map(([k, l]) => (
+          <button
+            key={k}
+            onClick={() => {
+              setView(k);
+              setMenu(false);
+            }}
+            className={`block w-full rounded-2xl px-4 py-3 text-left text-sm font-black ${view === k ? "bg-slate-950 text-white" : "hover:bg-slate-100"}`}
+          >
+            {l}
+          </button>
+        ))}
+      </nav>
+      <div className="mt-8 shrink-0 rounded-3xl bg-slate-950 p-5 text-white">
+        <b>{user.name}</b>
+        <p className="mt-1 text-xs uppercase tracking-widest text-slate-400">
+          {user.role} - {user.position}
+        </p>
+        <button
+          className="mt-4 w-full rounded-xl bg-white p-2 font-black text-slate-950"
+          onClick={async () => {
+            await logout();
+            setUser(null);
+            setData(null);
+            location.reload();
+          }}
+        >
+          Logout
+        </button>
+      </div>
     </aside>
   );
 
-  return <main className="min-h-screen">
-    <header className="sticky top-0 z-30 flex items-center justify-between bg-white p-4 lg:hidden"><Brand /><button className="btn secondary" onClick={() => setMenu(true)}>Menu</button></header>
-    {menu && <div className="fixed inset-0 z-50 bg-slate-950/50 lg:hidden" onClick={() => setMenu(false)}><div className="h-full w-80 max-w-[88vw]" onClick={e => e.stopPropagation()}><Side mobile /></div></div>}
-    <div className="flex">
-      <div className={`sticky top-0 hidden h-screen shrink-0 overflow-hidden border-r border-slate-200 transition-[width] duration-300 lg:block ${sidebarOpen ? "w-72" : "w-0"}`}><Side collapsible /></div>
-      <section className="w-full min-w-0 max-w-full flex-1 overflow-x-hidden p-4 sm:p-6 lg:p-8">
-        {!sidebarOpen && <button className="mb-5 hidden h-14 w-14 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-md shadow-slate-200/60 transition hover:-translate-y-0.5 hover:border-slate-300 hover:text-slate-950 lg:grid" onClick={() => toggleSidebar(true)} aria-label="Expand sidebar" title="Expand sidebar"><SidebarExpandIcon /></button>}
-        {content}
-      </section>
-    </div>
-  </main>;
+  return (
+    <main className="min-h-screen">
+      <header className="sticky top-0 z-30 flex items-center justify-between bg-white p-4 lg:hidden">
+        <Brand />
+        <button className="btn secondary" onClick={() => setMenu(true)}>
+          Menu
+        </button>
+      </header>
+      {menu && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/50 lg:hidden"
+          onClick={() => setMenu(false)}
+        >
+          <div
+            className="h-full w-80 max-w-[88vw]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Side mobile />
+          </div>
+        </div>
+      )}
+      <div className="flex">
+        <div
+          className={`sticky top-0 hidden h-screen shrink-0 overflow-hidden border-r border-slate-200 transition-[width] duration-300 lg:block ${sidebarOpen ? "w-72" : "w-0"}`}
+        >
+          <Side collapsible />
+        </div>
+        <section className="w-full min-w-0 max-w-full flex-1 overflow-x-hidden p-4 sm:p-6 lg:p-8">
+          {!sidebarOpen && (
+            <button
+              className="mb-5 hidden h-14 w-14 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-md shadow-slate-200/60 transition hover:-translate-y-0.5 hover:border-slate-300 hover:text-slate-950 lg:grid"
+              onClick={() => toggleSidebar(true)}
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+            >
+              <SidebarExpandIcon />
+            </button>
+          )}
+          {refreshError && (
+            <div className="mb-4">
+              <Alert>{refreshError}</Alert>
+            </div>
+          )}
+
+          {content}
+        </section>
+      </div>
+    </main>
+  );
 }
 function Brand({ sidebar = false }: { sidebar?: boolean }) {
-  if (sidebar) return <div className="min-w-0 pt-1">
-    <Image src="/doki-logo-yellow.png" alt="DOKI" width={132} height={50} priority className="h-auto w-[132px]" />
-    <h1 className="mt-6 max-w-[150px] text-[1.85rem] font-black leading-[1.08] tracking-[-0.035em] text-slate-950">Performance<br />Review</h1>
-  </div>;
-  return <div className="flex items-center gap-3"><Image src="/doki-logo-yellow.png" alt="DOKI" width={88} height={33} /><b className="text-sm">Performance Review</b></div>;
+  if (sidebar)
+    return (
+      <div className="min-w-0 pt-1">
+        <Image
+          src="/doki-logo-yellow.png"
+          alt="DOKI"
+          width={132}
+          height={50}
+          priority
+          className="h-auto w-[132px]"
+        />
+        <h1 className="mt-6 max-w-[150px] text-[1.85rem] font-black leading-[1.08] tracking-[-0.035em] text-slate-950">
+          Performance
+          <br />
+          Review
+        </h1>
+      </div>
+    );
+  return (
+    <div className="flex items-center gap-3">
+      <Image src="/doki-logo-yellow.png" alt="DOKI" width={88} height={33} />
+      <b className="text-sm">Performance Review</b>
+    </div>
+  );
 }
-function SidebarCollapseIcon() { return <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m15 9-3 3 3 3"/></svg>; }
-function SidebarExpandIcon() { return <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m12 9 3 3-3 3"/></svg>; }
-function CloseIcon() { return <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round"><path d="m6 6 12 12"/><path d="M18 6 6 18"/></svg>; }
-function ArrowIcon({direction}:{direction:"up"|"down"}) { return <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d={direction==="up"?"m6 15 6-6 6 6":"m6 9 6 6 6-6"}/></svg>; }
-export function LoginScreen(){const[u,setU]=useState(""),[p,setP]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false);return <main className="grid min-h-screen place-items-center p-4"><form className="card w-full max-w-md" onSubmit={async e=>{e.preventDefault();setBusy(true);setError("");try{await login(u,p);const next=new URLSearchParams(location.search).get("next");location.replace(next?.startsWith("/")?next:"/")}catch(x){setError((x as Error).message)}finally{setBusy(false)}}}><div className="text-center"><Image className="mx-auto h-auto w-32 sm:w-40" src="/doki-logo-yellow.png" alt="DOKI" width={160} height={60}/><h1 className="mt-4 text-2xl font-black sm:text-3xl">Performance Review</h1></div><div className="mt-8 space-y-4"><Field label="Username"><input required autoComplete="username" className="input" value={u} onChange={e=>setU(e.target.value)}/></Field><Field label="Password"><PasswordInput required autoComplete="current-password" value={p} onChange={setP}/></Field>{error&&<Alert>{error}</Alert>}<button disabled={busy} className="btn primary w-full disabled:opacity-60">{busy?"Signing in...":"Login"}</button></div></form></main>}
-function Head({title,action}:{title:string;action?:React.ReactNode}){return <div className="card flex max-w-full flex-col gap-4 overflow-hidden sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="eyebrow">DOKI Performance Review</p><h1 className="title break-words">{title}</h1></div>{action}</div>}
-function Dashboard({data,user}:{data:AppData;user:User}){const[selected,setSelected]=useState<{a:Assignment;r:PerformanceReview}|null>(null),[selectedReview,setSelectedReview]=useState<PerformanceReview|null>(null),all=data.reviews.flatMap(r=>r.assignments),mine=all.filter(a=>a.reviewerId===user.id),items=user.role==="ADMIN"?all:mine,reviews=[...data.reviews].sort((a,b)=>new Date(b.startDate).getTime()-new Date(a.startDate).getTime());if(selected)return <ReviewForm {...selected} data={data} close={()=>setSelected(null)} done={async()=>location.reload()}/>;if(selectedReview)return <ReviewModal review={selectedReview} data={data} close={()=>setSelectedReview(null)} done={async()=>location.reload()}/>;return <div className="space-y-6"><Head title={user.role==="ADMIN"?"HR Dashboard":`Welcome, ${user.name.split(" ")[0]}`}/><div className="metrics"><Metric label="Active reviews" value={reviews.filter(r=>r.status!=="CLOSED").length}/><Metric label="Not started" value={items.filter(a=>a.status==="NOT_STARTED").length}/><Metric label="Draft" value={items.filter(a=>a.status==="DRAFT").length}/><Metric label="Submitted" value={items.filter(a=>a.status==="SUBMITTED").length}/></div><div className="card space-y-4"><h2 className="text-xl font-black">Review</h2>{reviews.length?reviews.map(r=>{const assignment=r.assignments.find(a=>a.reviewerId===user.id);const clickable=user.role==="ADMIN"||!!assignment;return <button type="button" onClick={()=>user.role==="ADMIN"?setSelectedReview(r):assignment&&setSelected({a:assignment,r})} className={`block w-full rounded-2xl border border-slate-200 p-4 text-left transition ${clickable?"hover:border-emerald-400 hover:bg-emerald-50":"cursor-default"}`} key={r.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><b>{r.title}</b><p className="mt-1 text-xs text-slate-500">Deadline {dateTime(r.endDate)} - {r.assignments.length} assignments</p></div><Badge v={assignment?.status??r.status}/></div></button>}):<EmptyState message="Belum ada review yang tersedia."/>}</div></div>}
-function Metric({label,value}:{label:string;value:number}){return <div className="card"><p className="eyebrow">{label}</p><p className="mt-2 text-4xl font-black">{value}</p></div>}
-function Users({data,refresh}:Common){
-  const[edit,setEdit]=useState<User|null|undefined>();
-  if(edit!==undefined)return <UserModal user={edit} data={data} close={()=>setEdit(undefined)} done={()=>{setEdit(undefined);void refresh()}}/>;
-  return <div className="space-y-6"><Head title="Users" action={<button className="btn primary w-full sm:w-auto" onClick={()=>setEdit(null)}>+ Add User</button>}/>{data.users.length?<div className="table"><table><thead><tr><th>Name</th><th>Position</th><th>Username</th><th>Role</th><th>Status</th><th>Action</th></tr></thead><tbody>{data.users.map(u=><tr key={u.id}><td data-label="Name"><b>{u.name}</b></td><td data-label="Position">{u.position}</td><td data-label="Username">{u.username}</td><td data-label="Role">{u.role}</td><td data-label="Status"><Badge v={u.status}/></td><td data-label="Action"><button className="btn secondary small" onClick={()=>setEdit(u)}>Edit</button></td></tr>)}</tbody></table></div>:<div className="card"><EmptyState message="Belum ada user yang tersedia."/></div>}</div>
+function SidebarCollapseIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-6 w-6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+      <path d="m15 9-3 3 3 3" />
+    </svg>
+  );
 }
-function UserModal({user,data,close,done}:{user:User|null;data:AppData;close:()=>void;done:()=>void}){
-  const[f,setF]=useState({name:user?.name||"",position:user?.position||"",username:user?.username||"",password:"",role:user?.role||"USER",status:user?.status||"ACTIVE"}),[error,setError]=useState("");
-  return <Modal title={user?"Edit User":"Add User"} close={close}><form className="grid gap-5 sm:grid-cols-2" onSubmit={async e=>{e.preventDefault();try{await upsertUser(data,{...f,id:user?.id,role:f.role as User["role"],status:f.status as User["status"]});done()}catch(x){setError((x as Error).message)}}}><Field label="Name"><input required className="input" value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field><Field label="Position"><input required className="input" value={f.position} onChange={e=>setF({...f,position:e.target.value})}/></Field><Field label="Username"><input required className="input" value={f.username} onChange={e=>setF({...f,username:e.target.value})}/></Field><Field label={user?"New Password (optional)":"Password"}><PasswordInput required={!user} autoComplete="new-password" value={f.password} onChange={password=>setF({...f,password})}/></Field><Field label="Role"><select className="input" value={f.role} onChange={e=>setF({...f,role:e.target.value as User["role"]})}><option>USER</option><option>ADMIN</option></select></Field><Field label="Status"><select className="input" value={f.status} onChange={e=>setF({...f,status:e.target.value as User["status"]})}><option>ACTIVE</option><option>INACTIVE</option></select></Field>{error&&<div className="sm:col-span-2"><Alert>{error}</Alert></div>}<Actions close={close} label="Save User"/></form></Modal>
+function SidebarExpandIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-6 w-6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+      <path d="m12 9 3 3-3 3" />
+    </svg>
+  );
 }
-function Templates({data,refresh}:Common){const[rel,setRel]=useState<Relationship>("SELF"),[edit,setEdit]=useState<Question|null|undefined>();const list=[...data.templates[rel]].sort((a,b)=>a.order-b.order);const move=async(index:number,direction:-1|1)=>{const target=index+direction;if(target<0||target>=list.length)return;const ids=list.map(q=>q.id);[ids[index],ids[target]]=[ids[target],ids[index]];await reorderQuestions(ids);await refresh()};if(edit!==undefined)return <QuestionModal q={edit} rel={rel} close={()=>setEdit(undefined)} done={async(text,type)=>{await upsertQuestion(data,rel,{id:edit?.id,order:edit?.order,text,type});setEdit(undefined);await refresh()}}/>;return <div className="space-y-6"><Head title="Question Templates" action={<button className="btn primary w-full sm:w-auto" onClick={()=>setEdit(null)}>+ Add Question</button>}/><div className="grid max-w-full grid-cols-2 gap-2 rounded-2xl bg-white p-2 sm:flex">{rels.map(r=><button className={`btn small min-w-0 sm:shrink-0 ${rel===r?"primary":""}`} key={r} onClick={()=>setRel(r)}>{r}</button>)}</div><div className="card space-y-4">{list.length?list.map((q,i)=><div key={q.id} className="flex w-full max-w-full flex-col gap-4 overflow-hidden rounded-2xl border border-slate-200 p-4 sm:flex-row sm:items-center"><div className="flex w-full min-w-0 flex-1 items-center gap-3"><div className="flex shrink-0 flex-col gap-2"><button type="button" className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white font-black text-slate-700 transition hover:border-emerald-400 hover:bg-emerald-50" disabled={i===0} onClick={()=>void move(i,-1)} aria-label={`Move question ${i+1} up`} title="Move up"><ArrowIcon direction="up"/></button><button type="button" className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white font-black text-slate-700 transition hover:border-emerald-400 hover:bg-emerald-50" disabled={i===list.length-1} onClick={()=>void move(i,1)} aria-label={`Move question ${i+1} down`} title="Move down"><ArrowIcon direction="down"/></button></div><div className="min-w-0 flex-1 break-words"><b className="block break-words">{i+1}. {q.text}</b><p className="eyebrow mt-2">{q.type}</p></div></div><div className="flex flex-wrap gap-2"><button className="btn secondary small" onClick={()=>setEdit(q)}>Edit</button><button className="btn small text-rose-700" onClick={async()=>{if(confirm("Delete this question?")){await deleteQuestion(q.id);await refresh()}}}>Delete</button></div></div>):<EmptyState message="Belum ada pertanyaan untuk template ini."/>}</div></div>}
-
-function UserPicker({users,selected,onChange,placeholder="Search users..."}:{users:User[];selected:string[];onChange:(ids:string[])=>void;placeholder?:string}){const[open,setOpen]=useState(false),[query,setQuery]=useState("");const available=users.filter(user=>!selected.includes(user.id)&&`${user.name} ${user.position}`.toLowerCase().includes(query.toLowerCase()));return <div className="relative"><button type="button" className="input min-h-12 text-left" onClick={()=>setOpen(true)}>{selected.length?`${selected.length} user selected`:placeholder}</button>{selected.length>0&&<div className="mt-3 flex flex-wrap gap-2">{selected.map(id=><button type="button" className="relationship-pill" key={id} onClick={()=>onChange(selected.filter(value=>value!==id))}>{users.find(user=>user.id===id)?.name??id}<span>x</span></button>)}</div>}{open&&<div className="picker-panel"><div className="flex gap-2"><input autoFocus className="input" value={query} onChange={event=>setQuery(event.target.value)} placeholder={placeholder}/><button type="button" className="btn secondary" onClick={()=>{setOpen(false);setQuery("")}}>Close</button></div><div className="picker-results">{available.map(user=><button type="button" key={user.id} onClick={()=>{onChange([...selected,user.id]);setQuery("")}}><b>{user.name}</b><small>{user.position}</small></button>)}{!available.length&&<p>No users found.</p>}</div></div>}</div>}
-function QuestionModal({q,rel,close,done}:{q:Question|null;rel:Relationship;close:()=>void;done:(t:string,y:QuestionType)=>Promise<void>}){const[t,setT]=useState(q?.text||""),[y,setY]=useState<QuestionType>(q?.type||"RATING_1_5");return <Modal title={`${q?"Edit":"Add"} ${rel} Question`} close={close}><form className="space-y-4" onSubmit={async e=>{e.preventDefault();await done(t,y)}}><Field label="Question"><textarea required className="input min-h-28" value={t} onChange={e=>setT(e.target.value)}/></Field><Field label="Type"><select className="input" value={y} onChange={e=>setY(e.target.value as QuestionType)}><option>RATING_1_5</option><option>ESSAY</option></select></Field><Actions close={close} label="Save Question"/></form></Modal>}
-function Reviews({data,refresh}:Common){const[create,setCreate]=useState(false),[selected,setSelected]=useState<PerformanceReview|null>(null),[pendingDelete,setPendingDelete]=useState<PerformanceReview|null>(null),[deleting,setDeleting]=useState(false);const reload=async()=>{const result=await loadData();await refresh();setSelected(result.data.reviews.find(r=>r.id===selected?.id)||null)};if(create)return <Create data={data} close={()=>setCreate(false)} done={async()=>{setCreate(false);await refresh()}}/>;if(selected)return <ReviewModal review={selected} data={data} close={()=>setSelected(null)} done={reload}/>;return <div className="space-y-6"><Head title="Performance Reviews" action={<button className="btn primary w-full sm:w-auto" onClick={()=>setCreate(true)}>+ Create Review</button>}/>{data.reviews.length?<div className="table"><table><thead><tr><th>Review</th><th>Dates</th><th>Status</th><th>Progress</th><th>Action</th></tr></thead><tbody>{data.reviews.map(r=><tr key={r.id}><td data-label="Review"><b>{r.title}</b><p className="text-xs text-slate-500">{r.description}</p></td><td data-label="Dates">{date(r.startDate)} - {date(r.endDate)}</td><td data-label="Status"><Badge v={r.status}/></td><td data-label="Progress">{r.assignments.filter(a=>a.status==="SUBMITTED").length}/{r.assignments.length}</td><td data-label="Action"><div className="flex flex-wrap gap-2"><button className="btn secondary small" onClick={()=>setSelected(r)}>Configure</button><button className="btn small text-rose-700" onClick={()=>setPendingDelete(r)}>Delete</button></div></td></tr>)}</tbody></table></div>:<div className="card"><EmptyState message="Belum ada performance review yang tersedia."/></div>}{pendingDelete&&<ConfirmDialog title="Delete Performance Review?" message={`Review "${pendingDelete.title}" beserta seluruh assignment, jawaban, dan hasilnya akan dihapus permanen.`} busy={deleting} onClose={()=>setPendingDelete(null)} onConfirm={async()=>{setDeleting(true);try{await deleteReview(pendingDelete.id);setPendingDelete(null);await refresh()}finally{setDeleting(false)}}}/>}</div>}
-function Create({data,close,done}:{data:AppData;close:()=>void;done:()=>Promise<void>}){
-  const[f,setF]=useState({title:"",description:"",startDate:"",endDate:""}),[ids,setIds]=useState<string[]>([]),[links,setLinks]=useState<RelationshipLink[]>([]),[error,setError]=useState("");
-  const active=data.users.filter(u=>u.status==="ACTIVE");
-  const addLink=(revieweeId:string,relationship:RelationshipLink["relationship"],reviewerId:string)=>{if(!reviewerId)return;setLinks(current=>current.some(link=>link.revieweeId===revieweeId&&link.reviewerId===reviewerId)?current:[...current,{revieweeId,reviewerId,relationship}])};
-  return <Modal title="Create Performance Review" close={close} wide><form className="form-stack" noValidate onSubmit={async e=>{e.preventDefault();setError("");if(!f.title.trim()||!f.startDate||!f.endDate){setError("Lengkapi Title, Start Date, dan End Date.");return}if(new Date(f.endDate)<=new Date(f.startDate)){setError("End Date harus setelah Start Date.");return}if(!ids.length){setError("Pilih minimal satu peserta review.");return}try{await createReview(data,f,ids,links);await done()}catch(x){setError((x as Error).message)}}}><div className="grid gap-6 md:grid-cols-2"><Field label="Title"><input className="input" value={f.title} onChange={e=>setF({...f,title:e.target.value})}/></Field><Field label="Description"><input className="input" value={f.description} onChange={e=>setF({...f,description:e.target.value})}/></Field><Field label="Start Date & Time"><input type="datetime-local" className="input" value={f.startDate} onChange={e=>setF({...f,startDate:e.target.value})}/></Field><Field label="End Date & Time"><input type="datetime-local" className="input" value={f.endDate} onChange={e=>setF({...f,endDate:e.target.value})}/></Field></div><fieldset className="form-section"><legend className="section-legend">Participants</legend><UserPicker users={active} selected={ids} onChange={next=>{setIds(next);setLinks(current=>current.filter(link=>next.includes(link.revieweeId)))}} placeholder="Search and select participants..."/></fieldset>{ids.length>0&&<fieldset className="form-section"><legend className="section-legend">Hierarchy (Optional)</legend><div className="space-y-5">{ids.map(personId=><HierarchyEditor key={personId} personId={personId} links={links} data={data} onAdd={addLink} onRemove={(reviewerId)=>setLinks(current=>current.filter(link=>!(link.revieweeId===personId&&link.reviewerId===reviewerId)))}/>)}</div></fieldset>}{error&&<Alert>{error}</Alert>}<Actions close={close} label="Create Review"/></form></Modal>
+function CloseIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-6 w-6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.25"
+      strokeLinecap="round"
+    >
+      <path d="m6 6 12 12" />
+      <path d="M18 6 6 18" />
+    </svg>
+  );
 }
-function HierarchyEditor({personId,links,data,onAdd,onRemove}:{personId:string;links:RelationshipLink[];data:AppData;onAdd:(revieweeId:string,relationship:RelationshipLink["relationship"],reviewerId:string)=>void;onRemove:(reviewerId:string)=>void}){
-  const[reviewer,setReviewer]=useState(""),[relationship,setRelationship]=useState<RelationshipLink["relationship"]>("PEER"),[open,setOpen]=useState(false);
-  const assigned=links.filter(link=>link.revieweeId===personId),options=data.users.filter(user=>user.status==="ACTIVE"&&user.id!==personId&&!assigned.some(link=>link.reviewerId===user.id)).map(user=>user.id);
-  return <article className="rounded-3xl border border-slate-200 bg-slate-50 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="eyebrow">Participant</p><h3 className="mt-1 text-xl font-black">{who(data,personId)}</h3></div>{!open&&options.length>0&&<button type="button" className="btn secondary small" onClick={()=>setOpen(true)}>+ Add Relationship</button>}</div>{assigned.length>0&&<div className="mt-4 flex flex-wrap gap-2">{assigned.map(link=><button type="button" key={link.reviewerId} onClick={()=>onRemove(link.reviewerId)} className="relationship-pill"><span>{link.relationship}</span><b>{who(data,link.reviewerId)}</b><span aria-hidden="true">x</span></button>)}</div>}{open&&<div className="mt-5 grid gap-4 border-t border-slate-200 pt-5 lg:grid-cols-[12rem_minmax(0,1fr)_auto] lg:items-end"><Field label="Relationship"><select className="input" value={relationship} onChange={e=>setRelationship(e.target.value as RelationshipLink["relationship"])}><option value="MANAGER">Manager</option><option value="PEER">Peer</option><option value="SUBORDINATE">Subordinate</option></select></Field><Field label="User"><UserPicker users={data.users.filter(user=>options.includes(user.id))} selected={reviewer?[reviewer]:[]} onChange={values=>setReviewer(values.at(-1)??"")} placeholder="Search user..."/></Field><div className="flex gap-2"><button type="button" className="btn secondary" onClick={()=>{setOpen(false);setReviewer("")}}>Cancel</button><button type="button" className="btn primary" disabled={!reviewer} onClick={()=>{onAdd(personId,relationship,reviewer);setReviewer("");setOpen(false)}}>Add</button></div></div>}</article>
+function ArrowIcon({ direction }: { direction: "up" | "down" }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={direction === "up" ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} />
+    </svg>
+  );
 }
-function ReviewModal({review,data,close,done}:{review:PerformanceReview;data:AppData;close:()=>void;done:()=>Promise<void>}){const[addFor,setAddFor]=useState<string|null>(null),[form,setForm]=useState({title:review.title,description:review.description,startDate:dateTimeLocal(review.startDate),endDate:dateTimeLocal(review.endDate)}),[error,setError]=useState("");const reviewees=[...new Set(review.assignments.filter(a=>a.relationship==="SELF").map(a=>a.revieweeId))];if(addFor)return <AssignmentModal review={review} revieweeId={addFor} data={data} close={()=>setAddFor(null)} done={async()=>{setAddFor(null);await done()}}/>;return <Modal title="Edit Performance Review" close={close} wide><div className="form-stack"><form className="form-stack rounded-3xl border border-slate-200 p-5" noValidate onSubmit={async e=>{e.preventDefault();setError("");if(!form.title.trim()||!form.startDate||!form.endDate){setError("Lengkapi Title, Start Date, dan End Date.");return}try{await updateReview({id:review.id,...form});await done()}catch(x){setError((x as Error).message)}}}><div className="grid gap-6 md:grid-cols-2"><Field label="Title"><input className="input" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></Field><Field label="Description"><input className="input" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></Field><Field label="Start Date & Time"><input type="datetime-local" className="input" value={form.startDate} onChange={e=>setForm({...form,startDate:e.target.value})}/></Field><Field label="End Date & Time"><input type="datetime-local" className="input" value={form.endDate} onChange={e=>setForm({...form,endDate:e.target.value})}/></Field></div><div className="flex flex-col gap-4 sm:flex-row sm:items-end"><Field label="Status"><select className="input sm:w-56" value={review.status} onChange={async e=>{await updateReviewStatus(review.id,e.target.value as PerformanceReview["status"]);await done()}}><option>OPEN</option><option>IN_PROGRESS</option><option>CLOSED</option></select></Field><button className="btn primary sm:ml-auto">Save Review</button></div>{error&&<Alert>{error}</Alert>}</form><section><h3 className="text-xl font-black">Hierarchy</h3><div className="hierarchy-grid mt-5">{reviewees.map(revieweeId=><article key={revieweeId} className="hierarchy-card"><div className="hierarchy-person"><span>Reviewee</span><b>{who(data,revieweeId)}</b></div><div className="hierarchy-branches">{(["MANAGER","PEER","SUBORDINATE"] as Relationship[]).map(rel=><div key={rel} className="hierarchy-branch"><span>{rel}</span><div>{review.assignments.filter(a=>a.reviewerId===revieweeId&&a.relationship===rel).map(a=><span className="relationship-pill static" key={a.id}>{who(data,a.revieweeId)}</span>)}{!review.assignments.some(a=>a.reviewerId===revieweeId&&a.relationship===rel)&&<small>-</small>}</div></div>)}</div><button className="btn secondary small mt-4 w-full" onClick={()=>setAddFor(revieweeId)}>+ Add Relationship</button></article>)}</div></section></div></Modal>}
-function AssignmentModal({review,revieweeId,data,close,done}:{review:PerformanceReview;revieweeId:string;data:AppData;close:()=>void;done:()=>Promise<void>}){const[er,setEr]=useState(""),[rel,setRel]=useState<Exclude<Relationship,"SELF">>("PEER"),[error,setError]=useState("");const selected=new Set(review.assignments.filter(a=>a.reviewerId===revieweeId).map(a=>a.revieweeId));const options=data.users.filter(u=>u.status==="ACTIVE"&&u.id!==revieweeId&&!selected.has(u.id));return <Modal title={`Add Relationship for ${who(data,revieweeId)}`} close={close}><form className="form-stack" noValidate onSubmit={async e=>{e.preventDefault();setError("");if(!er){setError("Pilih reviewer terlebih dahulu.");return}try{await addAssignment(data,review.id,revieweeId,er,rel);await done()}catch(x){setError((x as Error).message)}}}><Field label="User"><UserPicker users={options} selected={er?[er]:[]} onChange={values=>setEr(values.at(-1)??"")} placeholder="Search user..."/></Field><Field label="Relationship"><select className="input" value={rel} onChange={e=>setRel(e.target.value as typeof rel)}><option>MANAGER</option><option>PEER</option><option>SUBORDINATE</option></select></Field>{error&&<Alert>{error}</Alert>}<Actions close={close} label="Add Relationship"/></form></Modal>}
-function Mine({data,user,refresh}:Common&{user:User}){const[open,setOpen]=useState<{a:Assignment;r:PerformanceReview}|null>(null),rows=data.reviews.flatMap(r=>r.assignments.filter(a=>a.reviewerId===user.id).map(a=>({a,r})));if(open)return <ReviewForm {...open} data={data} close={()=>setOpen(null)} done={async()=>{await refresh();setOpen(null)}}/>;return <div className="space-y-6"><Head title="My Reviews"/><div className="card space-y-3">{rows.length?rows.map(x=><button className="w-full text-left" key={x.a.id} onClick={()=>setOpen(x)}><Row {...x} data={data}/></button>):<EmptyState message="Belum ada review yang perlu diisi."/>}</div></div>}
-function ReviewForm({a,r,data,close,done}:{a:Assignment;r:PerformanceReview;data:AppData;close:()=>void;done:()=>Promise<void>}){const qs=r.questions.filter(q=>q.relationship===a.relationship).sort((x,y)=>x.order-y.order),[answers,setAnswers]=useState({...a.answers}),[missing,setMissing]=useState<string[]>([]),[error,setError]=useState(""),can=editable(r);const persist=async(submit:boolean)=>{const m=qs.filter(q=>!String(answers[q.id]??"").trim()).map(q=>q.id);if(submit&&m.length){setMissing(m);return}try{await saveAnswers(a.id,answers,submit);await done()}catch(x){setError((x as Error).message)}};return <Modal title={`Review: ${who(data,a.revieweeId)}`} close={close} wide><div className="space-y-4"><div className="flex gap-2"><Badge v={a.relationship}/><Badge v={a.status}/></div>{!can&&<Alert>This review is read-only because it has not started, is closed, or the deadline passed.</Alert>}{error&&<Alert>{error}</Alert>}{qs.map((q,i)=><div className={`rounded-3xl border p-5 ${missing.includes(q.id)?"border-rose-400 bg-rose-50":""}`} key={q.id}><b>{i+1}. {q.text}</b>{q.type==="RATING_1_5"?<div className="mt-4 grid grid-cols-5 gap-2">{[1,2,3,4,5].map(n=><label className={`rounded-xl border p-3 text-center font-black ${answers[q.id]===n?"bg-slate-950 text-white":""}`} key={n}><input disabled={!can} className="sr-only" type="radio" name={q.id} checked={answers[q.id]===n} onChange={()=>setAnswers({...answers,[q.id]:n})}/>{n}</label>)}</div>:<textarea disabled={!can} className="input mt-4 min-h-28" value={String(answers[q.id]??"")} onChange={e=>setAnswers({...answers,[q.id]:e.target.value})}/>}</div>)}{can&&<div className="flex justify-end gap-3"><button className="btn secondary" onClick={()=>persist(false)}>Save Draft</button><button className="btn primary" onClick={()=>{if(confirm("Submit this review? You can still edit it until the deadline."))persist(true)}}>Submit Review</button></div>}</div></Modal>}
-function Received({data,user}:{data:AppData;user:User}){const reviews=data.reviews.filter(r=>r.assignments.some(a=>a.revieweeId===user.id));return <div className="space-y-6"><Head title="Reviews About Me"/>{reviews.length?reviews.map(r=><div className="card" key={r.id}><div className="flex justify-between"><h2 className="text-xl font-black">{r.title}</h2><Badge v={r.status}/></div>{r.status!=="CLOSED"?<p className="mt-5 rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500">Results will be available after the Performance Review is closed.</p>:<div className="mt-5 space-y-4">{r.assignments.filter(a=>a.revieweeId===user.id&&a.status==="SUBMITTED").map(a=><div className="rounded-2xl border p-4" key={a.id}><Badge v={sourceRelationship(a.relationship)}/><b className="ml-2">From {anonymousSourceLabel(r.assignments.filter(item=>item.revieweeId===user.id&&item.status==="SUBMITTED"),a)}</b>{r.questions.filter(q=>q.relationship===a.relationship).map(q=><div className="mt-3" key={q.id}><p className="text-sm font-bold text-slate-500">{q.text}</p><p>{a.answers[q.id]??"-"}{q.type==="RATING_1_5"?" / 5":""}</p></div>)}</div>)}</div>}</div>):<div className="card"><EmptyState message="Belum ada hasil review untuk Anda."/></div>}</div>}
-function Row({a,r,data}:{a:Assignment;r:PerformanceReview;data:AppData}){return <div className="flex flex-col gap-2 rounded-2xl border bg-white p-4 sm:flex-row sm:items-center"><div className="flex-1"><b>{who(data,a.revieweeId)}</b><p className="text-xs text-slate-500">{r.title} - Due {date(r.endDate)}</p></div><div className="flex gap-2"><Badge v={a.relationship}/><Badge v={a.status}/></div></div>}
-function Badge({v}:{v:string}){const c=["ACTIVE","SUBMITTED","IN_PROGRESS"].includes(v)?"bg-emerald-100 text-emerald-700":["OPEN","DRAFT"].includes(v)?"bg-amber-100 text-amber-800":"bg-slate-200 text-slate-700";return <span className={`inline-flex min-h-7 items-center justify-center rounded-full px-3 py-1 text-center text-[11px] font-black leading-none ${c}`}>{v.replaceAll("_"," ")}</span>}
-function Modal({title,close,wide,children}:{title:string;close:()=>void;wide?:boolean;children:React.ReactNode}){return <section className={`mx-auto w-full space-y-6 ${wide?"max-w-5xl":"max-w-3xl"}`}><Head title={title} action={<button className="btn secondary" onClick={close}>Back</button>}/><div className="card">{children}</div></section>}
-function Field({label,children}:{label:string;children:React.ReactNode}){return <label><span className="mb-2 block text-sm font-bold">{label}</span>{children}</label>}
-function PasswordInput({value,onChange,required,autoComplete}:{value:string;onChange:(value:string)=>void;required?:boolean;autoComplete:string}){const[visible,setVisible]=useState(false);return <div className="relative"><input required={required} autoComplete={autoComplete} type={visible?"text":"password"} className="input pr-12" value={value} onChange={e=>onChange(e.target.value)}/><button type="button" onClick={()=>setVisible(current=>!current)} className="absolute right-2 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-950" aria-label={visible?"Hide password":"Show password"} title={visible?"Hide password":"Show password"}><EyeIcon hidden={visible}/></button></div>}
-function EyeIcon({hidden}:{hidden:boolean}){return <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{hidden?<><path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 4.2A10.8 10.8 0 0 1 12 4c6 0 10 8 10 8a16 16 0 0 1-2 3"/><path d="M6.6 6.6C3.8 8.5 2 12 2 12s4 8 10 8a9.8 9.8 0 0 0 5.4-1.6"/></>:<><path d="M2 12s4-8 10-8 10 8 10 8-4 8-10 8S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></>}</svg>}
-function Actions({close,label}:{close:()=>void;label:string}){return <div className="form-actions flex flex-col-reverse gap-3 sm:col-span-2 sm:flex-row sm:justify-end"><button type="button" className="btn secondary" onClick={close}>Cancel</button><button className="btn primary">{label}</button></div>}
-function Alert({children}:{children:React.ReactNode}){return <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-700">{children}</div>}
-function EmptyState({message="Belum ada data yang tersedia."}:{message?:string}){return <div className="grid min-h-36 place-items-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center"><div><div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-white text-xl font-black text-slate-400 shadow-sm">-</div><h3 className="mt-4 text-lg font-black text-slate-950">Data Tidak Ada</h3><p className="mt-1 text-sm text-slate-500">{message}</p></div></div>}
-function ConfirmDialog({title,message,confirmLabel="Delete",busy=false,onConfirm,onClose}:{title:string;message:string;confirmLabel?:string;busy?:boolean;onConfirm:()=>void|Promise<void>;onClose:()=>void}){return <div className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/55 p-4" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget&&!busy)onClose()}}><section role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" className="w-full max-w-md rounded-[2rem] border border-white bg-white p-6 shadow-2xl sm:p-8"><div className="grid h-12 w-12 place-items-center rounded-2xl bg-rose-50 text-xl font-black text-rose-700">!</div><h2 id="confirm-title" className="mt-5 text-2xl font-black text-slate-950">{title}</h2><p className="mt-3 leading-7 text-slate-600">{message}</p><div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" disabled={busy} className="btn secondary" onClick={onClose}>Cancel</button><button type="button" disabled={busy} className="btn bg-rose-700 text-white disabled:opacity-60" onClick={onConfirm}>{busy?"Deleting...":confirmLabel}</button></div></section></div>}
-const who=(d:AppData,id:string)=>d.users.find(u=>u.id===id)?.name||"Unknown";const date=(v:string)=>new Intl.DateTimeFormat("en-GB",{day:"numeric",month:"short",year:"numeric"}).format(new Date(v));const dateTime=(v:string)=>new Intl.DateTimeFormat("en-GB",{day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(v));const dateTimeLocal=(v:string)=>{const d=new Date(v),offset=d.getTimezoneOffset();return new Date(d.getTime()-offset*60000).toISOString().slice(0,16)};
+export function LoginScreen() {
+  const [u, setU] = useState(""),
+    [p, setP] = useState(""),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  return (
+    <main className="grid min-h-screen place-items-center p-4">
+      <form
+        className="card w-full max-w-md"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setError("");
+          try {
+            await login(u, p);
+            const next = new URLSearchParams(location.search).get("next");
+            location.replace(next?.startsWith("/") ? next : "/");
+          } catch (x) {
+            setError((x as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <div className="text-center">
+          <Image
+            className="mx-auto h-auto w-32 sm:w-40"
+            src="/doki-logo-yellow.png"
+            alt="DOKI"
+            width={160}
+            height={60}
+          />
+          <h1 className="mt-4 text-2xl font-black sm:text-3xl">
+            Performance Review
+          </h1>
+        </div>
+        <div className="mt-8 space-y-4">
+          <Field label="Username">
+            <input
+              required
+              autoComplete="username"
+              className="input"
+              value={u}
+              onChange={(e) => setU(e.target.value)}
+            />
+          </Field>
+          <Field label="Password">
+            <PasswordInput
+              required
+              autoComplete="current-password"
+              value={p}
+              onChange={setP}
+            />
+          </Field>
+          {error && <Alert>{error}</Alert>}
+          <button
+            disabled={busy}
+            className="btn primary w-full disabled:opacity-60"
+          >
+            {busy ? "Signing in..." : "Login"}
+          </button>
+        </div>
+      </form>
+    </main>
+  );
+}
+function Head({ title, action }: { title: string; action?: React.ReactNode }) {
+  return (
+    <div className="card flex max-w-full flex-col gap-4 overflow-hidden sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="eyebrow">DOKI Performance Review</p>
+        <h1 className="title break-words">{title}</h1>
+      </div>
+      {action}
+    </div>
+  );
+}
+function Dashboard({
+  data,
+  user,
+  refresh,
+}: {
+  data: AppData;
+  user: User;
+  refresh: () => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<{
+      a: Assignment;
+      r: PerformanceReview;
+    } | null>(null),
+    [selectedReview, setSelectedReview] = useState<PerformanceReview | null>(
+      null,
+    ),
+    all = data.reviews.flatMap((r) => r.assignments),
+    mine = all.filter((a) => a.reviewerId === user.id),
+    items = user.role === "ADMIN" ? all : mine,
+    reviews = [...data.reviews].sort(
+      (a, b) =>
+        new Date(b.startDate).getTime() - new Date(a.startDate).getTime(),
+    );
 
-const sourceRelationship=(relationship:Relationship):Relationship=>relationship==="MANAGER"?"SUBORDINATE":relationship==="SUBORDINATE"?"MANAGER":relationship;
-const anonymousSourceLabel=(assignments:Assignment[],assignment:Assignment)=>{const source=sourceRelationship(assignment.relationship);if(source==="SELF")return "Self";const peers=assignments.filter(item=>sourceRelationship(item.relationship)===source),number=peers.findIndex(item=>item.id===assignment.id)+1;return `${source[0]}${source.slice(1).toLowerCase()} ${number}`};
-function ResultReport({review,personId,data,back}:{review:PerformanceReview;personId:string;data:AppData;back:()=>void}){const incoming=review.assignments.filter(a=>a.revieweeId===personId&&a.status==="SUBMITTED"),counts=new Map<Relationship,number>();return <div className="report-page mx-auto max-w-5xl space-y-6"><Head title="Review Result" action={<div className="no-print flex gap-2"><button className="btn secondary" onClick={back}>Back</button><button className="btn primary" onClick={()=>window.print()}>Export PDF</button></div>}/><div className="card"><p className="eyebrow">{review.title}</p><h2 className="mt-2 text-2xl font-black">{who(data,personId)}</h2><p className="mt-2 text-sm text-slate-500">{date(review.startDate)} - {date(review.endDate)}</p></div>{incoming.map(a=>{const source=sourceRelationship(a.relationship),number=(counts.get(source)??0)+1;counts.set(source,number);const label=source==="SELF"?"Self":`${source[0]}${source.slice(1).toLowerCase()} ${number}`;return <section className="card report-section" key={a.id}><div className="flex items-center justify-between gap-3"><h3 className="text-xl font-black">From {label}</h3><Badge v={source}/></div><div className="mt-5 space-y-4">{review.questions.filter(q=>q.relationship===a.relationship).map(q=><div key={q.id} className="rounded-2xl bg-slate-50 p-4"><p className="text-sm font-bold text-slate-600">{q.text}</p><p className="mt-2 font-black">{a.answers[q.id]??"-"}{q.type==="RATING_1_5"?" / 5":""}</p></div>)}</div></section>})}{!incoming.length&&<div className="card text-slate-500">No submitted results are available.</div>}</div>}
-function Results({data}:{data:AppData}){const[reviewId,setReviewId]=useState(""),[personId,setPersonId]=useState("");const review=data.reviews.find(item=>item.id===reviewId),people=review?[...new Set(review.assignments.filter(a=>a.relationship==="SELF").map(a=>a.revieweeId))]:[];if(review&&personId)return <ResultReport review={review} personId={personId} data={data} back={()=>setPersonId("")}/>;return <div className="space-y-6"><Head title="Review Results"/><div className="card form-stack"><Field label="Performance Review"><select className="input" value={reviewId} onChange={event=>{setReviewId(event.target.value);setPersonId("")}}><option value="">Select review</option>{data.reviews.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</select></Field>{review&&<Field label="Reviewed User"><UserPicker users={data.users.filter(user=>people.includes(user.id))} selected={personId?[personId]:[]} onChange={values=>setPersonId(values.at(-1)??"")} placeholder="Search reviewed user..."/></Field>}</div></div>}
+  if (selected) {
+    const currentReview =
+      data.reviews.find((review) => review.id === selected.r.id) ?? selected.r;
 
+    const currentAssignment =
+      currentReview.assignments.find(
+        (assignment) => assignment.id === selected.a.id,
+      ) ?? selected.a;
 
+    return (
+      <ReviewForm
+        a={currentAssignment}
+        r={currentReview}
+        data={data}
+        close={() => setSelected(null)}
+        done={async () => {
+          await refresh();
+          setSelected(null);
+        }}
+      />
+    );
+  }
 
+  if (selectedReview) {
+    const currentReview =
+      data.reviews.find((review) => review.id === selectedReview.id) ??
+      selectedReview;
 
+    return (
+      <ReviewModal
+        review={currentReview}
+        data={data}
+        close={() => setSelectedReview(null)}
+        done={async () => {
+          await refresh();
+          setSelectedReview(null);
+        }}
+      />
+    );
+  }
+  return (
+    <div className="space-y-6">
+      <Head
+        title={
+          user.role === "ADMIN"
+            ? "HR Dashboard"
+            : `Welcome, ${user.name.split(" ")[0]}`
+        }
+      />
+      <div className="metrics">
+        <Metric
+          label="Active reviews"
+          value={reviews.filter((r) => r.status !== "CLOSED").length}
+        />
+        <Metric
+          label="Not started"
+          value={items.filter((a) => a.status === "NOT_STARTED").length}
+        />
+        <Metric
+          label="Draft"
+          value={items.filter((a) => a.status === "DRAFT").length}
+        />
+        <Metric
+          label="Submitted"
+          value={items.filter((a) => a.status === "SUBMITTED").length}
+        />
+      </div>
+      <div className="card space-y-4">
+        <h2 className="text-xl font-black">Review</h2>
+        {reviews.length ? (
+          reviews.map((r) => {
+            const assignment = r.assignments.find(
+              (a) => a.reviewerId === user.id,
+            );
+            const clickable = user.role === "ADMIN" || !!assignment;
+            return (
+              <button
+                type="button"
+                onClick={() =>
+                  user.role === "ADMIN"
+                    ? setSelectedReview(r)
+                    : assignment && setSelected({ a: assignment, r })
+                }
+                className={`block w-full rounded-2xl border border-slate-200 p-4 text-left transition ${clickable ? "hover:border-emerald-400 hover:bg-emerald-50" : "cursor-default"}`}
+                key={r.id}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <b>{r.title}</b>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Due Date: {dateTime(r.endDate)} - {r.assignments.length}{" "}
+                      assignments
+                    </p>
+                  </div>
+                  <Badge v={assignment?.status ?? r.status} />
+                </div>
+              </button>
+            );
+          })
+        ) : (
+          <EmptyState message="Belum ada review yang tersedia." />
+        )}
+      </div>
+    </div>
+  );
+}
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="card">
+      <p className="eyebrow">{label}</p>
+      <p className="mt-2 text-4xl font-black">{value}</p>
+    </div>
+  );
+}
+function Users({ data, refresh }: Common) {
+  const [edit, setEdit] = useState<User | null | undefined>();
+  if (edit !== undefined)
+    return (
+      <UserModal
+        user={edit}
+        data={data}
+        close={() => setEdit(undefined)}
+        done={() => {
+          setEdit(undefined);
+          void refresh();
+        }}
+      />
+    );
+  return (
+    <div className="space-y-6">
+      <Head
+        title="Users"
+        action={
+          <button
+            className="btn primary w-full sm:w-auto"
+            onClick={() => setEdit(null)}
+          >
+            + Add User
+          </button>
+        }
+      />
+      {data.users.length ? (
+        <div className="table">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Position</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.users.map((u) => (
+                <tr key={u.id}>
+                  <td data-label="Name">
+                    <b>{u.name}</b>
+                  </td>
+                  <td data-label="Position">{u.position}</td>
+                  <td data-label="Username">{u.username}</td>
+                  <td data-label="Role">{u.role}</td>
+                  <td data-label="Status">
+                    <Badge v={u.status} />
+                  </td>
+                  <td data-label="Action">
+                    <button
+                      className="btn secondary small"
+                      onClick={() => setEdit(u)}
+                    >
+                      Edit
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="card">
+          <EmptyState message="Belum ada user yang tersedia." />
+        </div>
+      )}
+    </div>
+  );
+}
+function UserModal({
+  user,
+  data,
+  close,
+  done,
+}: {
+  user: User | null;
+  data: AppData;
+  close: () => void;
+  done: () => void;
+}) {
+  const [f, setF] = useState({
+      name: user?.name || "",
+      position: user?.position || "",
+      username: user?.username || "",
+      password: "",
+      role: user?.role || "USER",
+      status: user?.status || "ACTIVE",
+    }),
+    [error, setError] = useState("");
+  return (
+    <Modal title={user ? "Edit User" : "Add User"} close={close}>
+      <form
+        className="grid gap-5 sm:grid-cols-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          try {
+            await upsertUser(data, {
+              ...f,
+              id: user?.id,
+              role: f.role as User["role"],
+              status: f.status as User["status"],
+            });
+            done();
+          } catch (x) {
+            setError((x as Error).message);
+          }
+        }}
+      >
+        <Field label="Name">
+          <input
+            required
+            className="input"
+            value={f.name}
+            onChange={(e) => setF({ ...f, name: e.target.value })}
+          />
+        </Field>
+        <Field label="Position">
+          <input
+            required
+            className="input"
+            value={f.position}
+            onChange={(e) => setF({ ...f, position: e.target.value })}
+          />
+        </Field>
+        <Field label="Username">
+          <input
+            required
+            className="input"
+            value={f.username}
+            onChange={(e) => setF({ ...f, username: e.target.value })}
+          />
+        </Field>
+        <Field label={user ? "New Password (optional)" : "Password"}>
+          <PasswordInput
+            required={!user}
+            autoComplete="new-password"
+            value={f.password}
+            onChange={(password) => setF({ ...f, password })}
+          />
+        </Field>
+        <Field label="Role">
+          <select
+            className="input"
+            value={f.role}
+            onChange={(e) =>
+              setF({ ...f, role: e.target.value as User["role"] })
+            }
+          >
+            <option>USER</option>
+            <option>ADMIN</option>
+          </select>
+        </Field>
+        <Field label="Status">
+          <select
+            className="input"
+            value={f.status}
+            onChange={(e) =>
+              setF({ ...f, status: e.target.value as User["status"] })
+            }
+          >
+            <option>ACTIVE</option>
+            <option>INACTIVE</option>
+          </select>
+        </Field>
+        {error && (
+          <div className="sm:col-span-2">
+            <Alert>{error}</Alert>
+          </div>
+        )}
+        <Actions close={close} label="Save User" />
+      </form>
+    </Modal>
+  );
+}
+function Templates({ data, refresh }: Common) {
+  const [rel, setRel] = useState<Relationship>("SELF"),
+    [edit, setEdit] = useState<Question | null | undefined>();
+  const list = [...data.templates[rel]].sort((a, b) => a.order - b.order);
+  const move = async (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= list.length) return;
+    const ids = list.map((q) => q.id);
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+    await reorderQuestions(ids);
+    await refresh();
+  };
+  if (edit !== undefined)
+    return (
+      <QuestionModal
+        q={edit}
+        rel={rel}
+        close={() => setEdit(undefined)}
+        done={async (text, type) => {
+          await upsertQuestion(data, rel, {
+            id: edit?.id,
+            order: edit?.order,
+            text,
+            type,
+          });
+          setEdit(undefined);
+          await refresh();
+        }}
+      />
+    );
+  return (
+    <div className="space-y-6">
+      <Head
+        title="Question Templates"
+        action={
+          <button
+            className="btn primary w-full sm:w-auto"
+            onClick={() => setEdit(null)}
+          >
+            + Add Question
+          </button>
+        }
+      />
+      <div className="grid max-w-full grid-cols-2 gap-2 rounded-2xl bg-white p-2 sm:flex">
+        {rels.map((r) => (
+          <button
+            className={`btn small min-w-0 sm:shrink-0 ${rel === r ? "primary" : ""}`}
+            key={r}
+            onClick={() => setRel(r)}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
+      <div className="card space-y-4">
+        {list.length ? (
+          list.map((q, i) => (
+            <div
+              key={q.id}
+              className="flex w-full max-w-full flex-col gap-4 overflow-hidden rounded-2xl border border-slate-200 p-4 sm:flex-row sm:items-center"
+            >
+              <div className="flex w-full min-w-0 flex-1 items-center gap-3">
+                <div className="flex shrink-0 flex-col gap-2">
+                  <button
+                    type="button"
+                    className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white font-black text-slate-700 transition hover:border-emerald-400 hover:bg-emerald-50"
+                    disabled={i === 0}
+                    onClick={() => void move(i, -1)}
+                    aria-label={`Move question ${i + 1} up`}
+                    title="Move up"
+                  >
+                    <ArrowIcon direction="up" />
+                  </button>
+                  <button
+                    type="button"
+                    className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white font-black text-slate-700 transition hover:border-emerald-400 hover:bg-emerald-50"
+                    disabled={i === list.length - 1}
+                    onClick={() => void move(i, 1)}
+                    aria-label={`Move question ${i + 1} down`}
+                    title="Move down"
+                  >
+                    <ArrowIcon direction="down" />
+                  </button>
+                </div>
+                <div className="min-w-0 flex-1 break-words">
+                  <b className="block break-words">
+                    {i + 1}. {q.text}
+                  </b>
+                  <p className="eyebrow mt-2">{q.type}</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="btn secondary small"
+                  onClick={() => setEdit(q)}
+                >
+                  Edit
+                </button>
+                <button
+                  className="btn small text-rose-700"
+                  onClick={async () => {
+                    if (confirm("Delete this question?")) {
+                      await deleteQuestion(q.id);
+                      await refresh();
+                    }
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))
+        ) : (
+          <EmptyState message="Belum ada pertanyaan untuk template ini." />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function UserPicker({
+  users,
+  selected,
+  onChange,
+  placeholder = "Search users...",
+}: {
+  users: User[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false),
+    [query, setQuery] = useState("");
+  const available = users.filter(
+    (user) =>
+      !selected.includes(user.id) &&
+      `${user.name} ${user.position}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+  );
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        className="input min-h-12 text-left"
+        onClick={() => setOpen(true)}
+      >
+        {selected.length ? `${selected.length} user selected` : placeholder}
+      </button>
+      {selected.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {selected.map((id) => (
+            <button
+              type="button"
+              className="relationship-pill"
+              key={id}
+              onClick={() => onChange(selected.filter((value) => value !== id))}
+            >
+              {users.find((user) => user.id === id)?.name ?? id}
+              <span>x</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {open && (
+        <div className="picker-panel">
+          <div className="flex gap-2">
+            <input
+              autoFocus
+              className="input"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={placeholder}
+            />
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => {
+                setOpen(false);
+                setQuery("");
+              }}
+            >
+              Close
+            </button>
+          </div>
+          <div className="picker-results">
+            {available.map((user) => (
+              <button
+                type="button"
+                key={user.id}
+                onClick={() => {
+                  onChange([...selected, user.id]);
+                  setQuery("");
+                }}
+              >
+                <b>{user.name}</b>
+                <small>{user.position}</small>
+              </button>
+            ))}
+            {!available.length && <p>No users found.</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function QuestionModal({
+  q,
+  rel,
+  close,
+  done,
+}: {
+  q: Question | null;
+  rel: Relationship;
+  close: () => void;
+  done: (t: string, y: QuestionType) => Promise<void>;
+}) {
+  const [t, setT] = useState(q?.text || ""),
+    [y, setY] = useState<QuestionType>(q?.type || "RATING_1_5");
+  return (
+    <Modal title={`${q ? "Edit" : "Add"} ${rel} Question`} close={close}>
+      <form
+        className="space-y-4"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          await done(t, y);
+        }}
+      >
+        <Field label="Question">
+          <textarea
+            required
+            className="input min-h-28"
+            value={t}
+            onChange={(e) => setT(e.target.value)}
+          />
+        </Field>
+        <Field label="Type">
+          <select
+            className="input"
+            value={y}
+            onChange={(e) => setY(e.target.value as QuestionType)}
+          >
+            <option>RATING_1_5</option>
+            <option>ESSAY</option>
+          </select>
+        </Field>
+        <Actions close={close} label="Save Question" />
+      </form>
+    </Modal>
+  );
+}
+function Reviews({ data, refresh }: Common) {
+  const [create, setCreate] = useState(false),
+    [selected, setSelected] = useState<PerformanceReview | null>(null),
+    [pendingDelete, setPendingDelete] = useState<PerformanceReview | null>(
+      null,
+    ),
+    [deleting, setDeleting] = useState(false);
+  const reload = async () => {
+    await refresh();
+  };
+  if (create)
+    return (
+      <Create
+        data={data}
+        close={() => setCreate(false)}
+        done={async () => {
+          setCreate(false);
+          await refresh();
+        }}
+      />
+    );
+  const currentSelected = selected
+    ? (data.reviews.find((review) => review.id === selected.id) ?? selected)
+    : null;
+  if (currentSelected)
+    return (
+      <ReviewModal
+        review={currentSelected}
+        data={data}
+        close={() => setSelected(null)}
+        done={reload}
+      />
+    );
+  return (
+    <div className="space-y-6">
+      <Head
+        title="Performance Reviews"
+        action={
+          <button
+            className="btn primary w-full sm:w-auto"
+            onClick={() => setCreate(true)}
+          >
+            + Create Review
+          </button>
+        }
+      />
+      {data.reviews.length ? (
+        <div className="table">
+          <table>
+            <thead>
+              <tr>
+                <th>Review</th>
+                <th>Dates</th>
+                <th>Status</th>
+                <th>Progress</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.reviews.map((r) => (
+                <tr key={r.id}>
+                  <td data-label="Review">
+                    <b>{r.title}</b>
+                    <p className="text-xs text-slate-500">{r.description}</p>
+                  </td>
+                  <td data-label="Schedule">
+                    <div className="space-y-1 text-sm">
+                      <div>
+                        <span className="text-slate-500">Start: </span>
+                        <span>{dateTime(r.startDate)}</span>
+                      </div>
+
+                      <div>
+                        <span className="text-slate-500">Due: </span>
+                        <span>{dateTime(r.endDate)}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td data-label="Status">
+                    <Badge v={r.status} />
+                  </td>
+                  <td data-label="Progress">
+                    {
+                      r.assignments.filter((a) => a.status === "SUBMITTED")
+                        .length
+                    }
+                    /{r.assignments.length}
+                  </td>
+                  <td data-label="Action">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="btn secondary small"
+                        onClick={() => setSelected(r)}
+                      >
+                        Configure
+                      </button>
+                      <button
+                        className="btn small text-rose-700"
+                        onClick={() => setPendingDelete(r)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="card">
+          <EmptyState message="Belum ada performance review yang tersedia." />
+        </div>
+      )}
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete Performance Review?"
+          message={`Review "${pendingDelete.title}" beserta seluruh assignment, jawaban, dan hasilnya akan dihapus permanen.`}
+          busy={deleting}
+          onClose={() => setPendingDelete(null)}
+          onConfirm={async () => {
+            setDeleting(true);
+            try {
+              await deleteReview(pendingDelete.id);
+              setPendingDelete(null);
+              await refresh();
+            } finally {
+              setDeleting(false);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+function Create({
+  data,
+  close,
+  done,
+}: {
+  data: AppData;
+  close: () => void;
+  done: () => Promise<void>;
+}) {
+  const [f, setF] = useState({
+      title: "",
+      description: "",
+      startDate: "",
+      endDate: "",
+    }),
+    [ids, setIds] = useState<string[]>([]),
+    [links, setLinks] = useState<RelationshipLink[]>([]),
+    [error, setError] = useState("");
+  const active = data.users.filter((u) => u.status === "ACTIVE");
+  const addLink = (
+    revieweeId: string,
+    relationship: RelationshipLink["relationship"],
+    reviewerId: string,
+  ) => {
+    if (!reviewerId) return;
+    setLinks((current) =>
+      current.some(
+        (link) =>
+          link.revieweeId === revieweeId && link.reviewerId === reviewerId,
+      )
+        ? current
+        : [...current, { revieweeId, reviewerId, relationship }],
+    );
+  };
+  return (
+    <Modal title="Create Performance Review" close={close} wide>
+      <form
+        className="form-stack"
+        noValidate
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setError("");
+          if (!f.title.trim() || !f.startDate || !f.endDate) {
+            setError("Lengkapi Title, Start Date, dan End Date.");
+            return;
+          }
+          if (new Date(f.endDate) <= new Date(f.startDate)) {
+            setError("End Date harus setelah Start Date.");
+            return;
+          }
+          if (!ids.length) {
+            setError("Pilih minimal satu peserta review.");
+            return;
+          }
+          try {
+            await createReview(data, f, ids, links);
+            await done();
+          } catch (x) {
+            setError((x as Error).message);
+          }
+        }}
+      >
+        <div className="grid gap-6 md:grid-cols-2">
+          <Field label="Title">
+            <input
+              className="input"
+              value={f.title}
+              onChange={(e) => setF({ ...f, title: e.target.value })}
+            />
+          </Field>
+          <Field label="Description">
+            <input
+              className="input"
+              value={f.description}
+              onChange={(e) => setF({ ...f, description: e.target.value })}
+            />
+          </Field>
+          <Field label="Start Date & Time">
+            <input
+              type="datetime-local"
+              className="input"
+              value={f.startDate}
+              onChange={(e) => setF({ ...f, startDate: e.target.value })}
+            />
+          </Field>
+          <Field label="End Date & Time">
+            <input
+              type="datetime-local"
+              className="input"
+              value={f.endDate}
+              onChange={(e) => setF({ ...f, endDate: e.target.value })}
+            />
+          </Field>
+        </div>
+        <fieldset className="form-section">
+          <legend className="section-legend">Participants</legend>
+          <UserPicker
+            users={active}
+            selected={ids}
+            onChange={(next) => {
+              setIds(next);
+              setLinks((current) =>
+                current.filter((link) => next.includes(link.revieweeId)),
+              );
+            }}
+            placeholder="Search and select participants..."
+          />
+        </fieldset>
+        {ids.length > 0 && (
+          <fieldset className="form-section">
+            <legend className="section-legend">Hierarchy (Optional)</legend>
+            <div className="space-y-5">
+              {ids.map((personId) => (
+                <HierarchyEditor
+                  key={personId}
+                  personId={personId}
+                  links={links}
+                  data={data}
+                  onAdd={addLink}
+                  onRemove={(reviewerId) =>
+                    setLinks((current) =>
+                      current.filter(
+                        (link) =>
+                          !(
+                            link.revieweeId === personId &&
+                            link.reviewerId === reviewerId
+                          ),
+                      ),
+                    )
+                  }
+                />
+              ))}
+            </div>
+          </fieldset>
+        )}
+        {error && <Alert>{error}</Alert>}
+        <Actions close={close} label="Create Review" />
+      </form>
+    </Modal>
+  );
+}
+function HierarchyEditor({
+  personId,
+  links,
+  data,
+  onAdd,
+  onRemove,
+}: {
+  personId: string;
+  links: RelationshipLink[];
+  data: AppData;
+  onAdd: (
+    revieweeId: string,
+    relationship: RelationshipLink["relationship"],
+    reviewerId: string,
+  ) => void;
+  onRemove: (reviewerId: string) => void;
+}) {
+  const [reviewer, setReviewer] = useState(""),
+    [relationship, setRelationship] =
+      useState<RelationshipLink["relationship"]>("PEER"),
+    [open, setOpen] = useState(false);
+  const assigned = links.filter((link) => link.revieweeId === personId),
+    options = data.users
+      .filter(
+        (user) =>
+          user.status === "ACTIVE" &&
+          user.id !== personId &&
+          !assigned.some((link) => link.reviewerId === user.id),
+      )
+      .map((user) => user.id);
+  return (
+    <article className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="min-w-0 flex-1">
+          <p className="eyebrow">Participant</p>
+          <h3 className="mt-1 text-xl font-black">{who(data, personId)}</h3>
+        </div>
+        {!open && options.length > 0 && (
+          <button
+            type="button"
+            className="btn secondary small"
+            onClick={() => setOpen(true)}
+          >
+            + Add Relationship
+          </button>
+        )}
+      </div>
+      {assigned.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {assigned.map((link) => (
+            <button
+              type="button"
+              key={link.reviewerId}
+              onClick={() => onRemove(link.reviewerId)}
+              className="relationship-pill"
+            >
+              <span>{link.relationship}</span>
+              <b>{who(data, link.reviewerId)}</b>
+              <span aria-hidden="true">x</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {open && (
+        <div className="mt-5 grid gap-4 border-t border-slate-200 pt-5 lg:grid-cols-[12rem_minmax(0,1fr)_auto] lg:items-end">
+          <Field label="Relationship">
+            <select
+              className="input"
+              value={relationship}
+              onChange={(e) =>
+                setRelationship(
+                  e.target.value as RelationshipLink["relationship"],
+                )
+              }
+            >
+              <option value="MANAGER">Manager</option>
+              <option value="PEER">Peer</option>
+              <option value="SUBORDINATE">Subordinate</option>
+            </select>
+          </Field>
+          <Field label="User">
+            <UserPicker
+              users={data.users.filter((user) => options.includes(user.id))}
+              selected={reviewer ? [reviewer] : []}
+              onChange={(values) => setReviewer(values.at(-1) ?? "")}
+              placeholder="Search user..."
+            />
+          </Field>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => {
+                setOpen(false);
+                setReviewer("");
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={!reviewer}
+              onClick={() => {
+                onAdd(personId, relationship, reviewer);
+                setReviewer("");
+                setOpen(false);
+              }}
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+function ReviewModal({
+  review,
+  data,
+  close,
+  done,
+}: {
+  review: PerformanceReview;
+  data: AppData;
+  close: () => void;
+  done: () => Promise<void>;
+}) {
+  const [addFor, setAddFor] = useState<string | null>(null),
+    [form, setForm] = useState({
+      title: review.title,
+      description: review.description,
+      startDate: dateTimeLocal(review.startDate),
+      endDate: dateTimeLocal(review.endDate),
+    }),
+    [error, setError] = useState("");
+  const reviewees = [
+    ...new Set(
+      review.assignments
+        .filter((a) => a.relationship === "SELF")
+        .map((a) => a.revieweeId),
+    ),
+  ];
+  if (addFor)
+    return (
+      <AssignmentModal
+        review={review}
+        revieweeId={addFor}
+        data={data}
+        close={() => setAddFor(null)}
+        done={async () => {
+          setAddFor(null);
+          await done();
+        }}
+      />
+    );
+  return (
+    <Modal title="Edit Performance Review" close={close} wide>
+      <div className="form-stack">
+        <form
+          className="form-stack rounded-3xl border border-slate-200 p-5"
+          noValidate
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setError("");
+            if (!form.title.trim() || !form.startDate || !form.endDate) {
+              setError("Lengkapi Title, Start Date, dan End Date.");
+              return;
+            }
+            try {
+              await updateReview({ id: review.id, ...form });
+              await done();
+            } catch (x) {
+              setError((x as Error).message);
+            }
+          }}
+        >
+          <div className="grid gap-6 md:grid-cols-2">
+            <Field label="Title">
+              <input
+                className="input"
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+              />
+            </Field>
+            <Field label="Description">
+              <input
+                className="input"
+                value={form.description}
+                onChange={(e) =>
+                  setForm({ ...form, description: e.target.value })
+                }
+              />
+            </Field>
+            <Field label="Start Date & Time">
+              <input
+                type="datetime-local"
+                className="input"
+                value={form.startDate}
+                onChange={(e) =>
+                  setForm({ ...form, startDate: e.target.value })
+                }
+              />
+            </Field>
+            <Field label="End Date & Time">
+              <input
+                type="datetime-local"
+                className="input"
+                value={form.endDate}
+                onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+              />
+            </Field>
+          </div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div>
+              <span className="mb-2 block text-sm font-bold">Status</span>
+
+              <Badge v={review.status} />
+            </div>
+
+            <button className="btn primary sm:ml-auto">Save Review</button>
+          </div>
+          {error && <Alert>{error}</Alert>}
+        </form>
+        <section>
+          <h3 className="text-xl font-black">Hierarchy</h3>
+          <div className="hierarchy-grid mt-5">
+            {reviewees.map((revieweeId) => (
+              <article key={revieweeId} className="hierarchy-card">
+                <div className="hierarchy-person">
+                  <span>Reviewee</span>
+                  <b>{who(data, revieweeId)}</b>
+                </div>
+                <div className="hierarchy-branches">
+                  {(["MANAGER", "PEER", "SUBORDINATE"] as Relationship[]).map(
+                    (rel) => (
+                      <div key={rel} className="hierarchy-branch">
+                        <span>{rel}</span>
+                        <div>
+                          {review.assignments
+                            .filter(
+                              (a) =>
+                                a.reviewerId === revieweeId &&
+                                a.relationship === rel,
+                            )
+                            .map((a) => (
+                              <span
+                                className="relationship-pill static"
+                                key={a.id}
+                              >
+                                {who(data, a.revieweeId)}
+                              </span>
+                            ))}
+                          {!review.assignments.some(
+                            (a) =>
+                              a.reviewerId === revieweeId &&
+                              a.relationship === rel,
+                          ) && <small>-</small>}
+                        </div>
+                      </div>
+                    ),
+                  )}
+                </div>
+                <button
+                  className="btn secondary small mt-4 w-full"
+                  onClick={() => setAddFor(revieweeId)}
+                >
+                  + Add Relationship
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    </Modal>
+  );
+}
+function AssignmentModal({
+  review,
+  revieweeId,
+  data,
+  close,
+  done,
+}: {
+  review: PerformanceReview;
+  revieweeId: string;
+  data: AppData;
+  close: () => void;
+  done: () => Promise<void>;
+}) {
+  const [er, setEr] = useState(""),
+    [rel, setRel] = useState<Exclude<Relationship, "SELF">>("PEER"),
+    [error, setError] = useState("");
+  const selected = new Set(
+    review.assignments
+      .filter((a) => a.reviewerId === revieweeId)
+      .map((a) => a.revieweeId),
+  );
+  const options = data.users.filter(
+    (u) => u.status === "ACTIVE" && u.id !== revieweeId && !selected.has(u.id),
+  );
+  return (
+    <Modal
+      title={`Add Relationship for ${who(data, revieweeId)}`}
+      close={close}
+    >
+      <form
+        className="form-stack"
+        noValidate
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setError("");
+          if (!er) {
+            setError("Pilih reviewer terlebih dahulu.");
+            return;
+          }
+          try {
+            await addAssignment(data, review.id, revieweeId, er, rel);
+            await done();
+          } catch (x) {
+            setError((x as Error).message);
+          }
+        }}
+      >
+        <Field label="User">
+          <UserPicker
+            users={options}
+            selected={er ? [er] : []}
+            onChange={(values) => setEr(values.at(-1) ?? "")}
+            placeholder="Search user..."
+          />
+        </Field>
+        <Field label="Relationship">
+          <select
+            className="input"
+            value={rel}
+            onChange={(e) => setRel(e.target.value as typeof rel)}
+          >
+            <option>MANAGER</option>
+            <option>PEER</option>
+            <option>SUBORDINATE</option>
+          </select>
+        </Field>
+        {error && <Alert>{error}</Alert>}
+        <Actions close={close} label="Add Relationship" />
+      </form>
+    </Modal>
+  );
+}
+function Mine({ data, user, refresh }: Common & { user: User }) {
+  const [open, setOpen] = useState<{
+      a: Assignment;
+      r: PerformanceReview;
+    } | null>(null),
+    rows = data.reviews.flatMap((r) =>
+      r.assignments
+        .filter((a) => a.reviewerId === user.id)
+        .map((a) => ({ a, r })),
+    );
+  if (open) {
+    const currentReview =
+      data.reviews.find((review) => review.id === open.r.id) ?? open.r;
+
+    const currentAssignment =
+      currentReview.assignments.find(
+        (assignment) => assignment.id === open.a.id,
+      ) ?? open.a;
+
+    return (
+      <ReviewForm
+        a={currentAssignment}
+        r={currentReview}
+        data={data}
+        close={() => setOpen(null)}
+        done={async () => {
+          await refresh();
+          setOpen(null);
+        }}
+      />
+    );
+  }
+  return (
+    <div className="space-y-6">
+      <Head title="My Reviews" />
+      <div className="card space-y-3">
+        {rows.length ? (
+          rows.map((x) => (
+            <button
+              className="w-full text-left"
+              key={x.a.id}
+              onClick={() => setOpen(x)}
+            >
+              <Row {...x} data={data} />
+            </button>
+          ))
+        ) : (
+          <EmptyState message="Belum ada review yang perlu diisi." />
+        )}
+      </div>
+    </div>
+  );
+}
+function ReviewForm({
+  a,
+  r,
+  data,
+  close,
+  done,
+}: {
+  a: Assignment;
+  r: PerformanceReview;
+  data: AppData;
+  close: () => void;
+  done: () => Promise<void>;
+}) {
+  const qs = r.questions
+      .filter((q) => q.relationship === a.relationship)
+      .sort((x, y) => x.order - y.order),
+    [answers, setAnswers] = useState({ ...a.answers }),
+    [missing, setMissing] = useState<string[]>([]),
+    [error, setError] = useState(""),
+    can = editable(r);
+  const persist = async (submit: boolean) => {
+    const m = qs
+      .filter((q) => !String(answers[q.id] ?? "").trim())
+      .map((q) => q.id);
+    if (submit && m.length) {
+      setMissing(m);
+      return;
+    }
+    try {
+      await saveAnswers(a.id, answers, submit);
+      await done();
+    } catch (x) {
+      setError((x as Error).message);
+    }
+  };
+  return (
+    <Modal title={`Review: ${who(data, a.revieweeId)}`} close={close} wide>
+      <div className="space-y-4">
+        <div className="flex gap-2">
+          <Badge v={a.relationship} />
+          <Badge v={a.status} />
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs font-black uppercase tracking-wider text-slate-500">
+            Review Schedule
+          </p>
+
+          <div className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+            <div>
+              <span className="text-slate-500">Start Date</span>
+              <p className="font-bold text-slate-950">
+                {dateTime(r.startDate)}
+              </p>
+            </div>
+
+            <div>
+              <span className="text-slate-500">Due Date</span>
+              <p className="font-bold text-slate-950">{dateTime(r.endDate)}</p>
+            </div>
+          </div>
+        </div>
+        {!can && (
+          <Alert>
+            This review is read-only because it has not started, is closed, or
+            the deadline passed.
+          </Alert>
+        )}
+        {error && <Alert>{error}</Alert>}
+        {qs.map((q, i) => (
+          <div
+            className={`rounded-3xl border p-5 ${missing.includes(q.id) ? "border-rose-400 bg-rose-50" : ""}`}
+            key={q.id}
+          >
+            <b>
+              {i + 1}. {q.text}
+            </b>
+            {q.type === "RATING_1_5" ? (
+              <div className="mt-4 grid grid-cols-5 gap-2">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <label
+                    className={`rounded-xl border p-3 text-center font-black ${answers[q.id] === n ? "bg-slate-950 text-white" : ""}`}
+                    key={n}
+                  >
+                    <input
+                      disabled={!can}
+                      className="sr-only"
+                      type="radio"
+                      name={q.id}
+                      checked={answers[q.id] === n}
+                      onChange={() => setAnswers({ ...answers, [q.id]: n })}
+                    />
+                    {n}
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <textarea
+                disabled={!can}
+                className="input mt-4 min-h-28"
+                value={String(answers[q.id] ?? "")}
+                onChange={(e) =>
+                  setAnswers({ ...answers, [q.id]: e.target.value })
+                }
+              />
+            )}
+          </div>
+        ))}
+        {can && (
+          <div className="flex justify-end gap-3">
+            <button className="btn secondary" onClick={() => persist(false)}>
+              Save Draft
+            </button>
+            <button
+              className="btn primary"
+              onClick={() => {
+                if (
+                  confirm(
+                    "Submit this review? You can still edit it until the deadline.",
+                  )
+                )
+                  persist(true);
+              }}
+            >
+              Submit Review
+            </button>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+function Received({ data, user }: { data: AppData; user: User }) {
+  const reviews = data.reviews.filter((r) =>
+    r.assignments.some((a) => a.revieweeId === user.id),
+  );
+  return (
+    <div className="space-y-6">
+      <Head title="Reviews About Me" />
+      {reviews.length ? (
+        reviews.map((r) => (
+          <div className="card" key={r.id}>
+            <div className="flex justify-between">
+              <h2 className="text-xl font-black">{r.title}</h2>
+              <Badge v={r.status} />
+            </div>
+            {r.status !== "CLOSED" ? (
+              <p className="mt-5 rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500">
+                Results will be available after the Performance Review is
+                closed.
+              </p>
+            ) : (
+              <div className="mt-5 space-y-4">
+                {r.assignments
+                  .filter(
+                    (a) => a.revieweeId === user.id && a.status === "SUBMITTED",
+                  )
+                  .map((a) => (
+                    <div className="rounded-2xl border p-4" key={a.id}>
+                      <Badge v={sourceRelationship(a.relationship)} />
+                      <b className="ml-2">
+                        From{" "}
+                        {anonymousSourceLabel(
+                          r.assignments.filter(
+                            (item) =>
+                              item.revieweeId === user.id &&
+                              item.status === "SUBMITTED",
+                          ),
+                          a,
+                        )}
+                      </b>
+                      {r.questions
+                        .filter((q) => q.relationship === a.relationship)
+                        .map((q) => (
+                          <div className="mt-3" key={q.id}>
+                            <p className="text-sm font-bold text-slate-500">
+                              {q.text}
+                            </p>
+                            <p>
+                              {a.answers[q.id] ?? "-"}
+                              {q.type === "RATING_1_5" ? " / 5" : ""}
+                            </p>
+                          </div>
+                        ))}
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        ))
+      ) : (
+        <div className="card">
+          <EmptyState message="Belum ada hasil review untuk Anda." />
+        </div>
+      )}
+    </div>
+  );
+}
+function Row({
+  a,
+  r,
+  data,
+}: {
+  a: Assignment;
+  r: PerformanceReview;
+  data: AppData;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl border bg-white p-4 sm:flex-row sm:items-center">
+      <div className="flex-1">
+        <b>{who(data, a.revieweeId)}</b>
+        <p className="text-xs text-slate-500">
+          {r.title} - Due Date: {dateTime(r.endDate)}
+        </p>
+      </div>
+      <div className="flex gap-2">
+        <Badge v={a.relationship} />
+        <Badge v={a.status} />
+      </div>
+    </div>
+  );
+}
+function Badge({ v }: { v: string }) {
+  const c = ["ACTIVE", "SUBMITTED", "IN_PROGRESS"].includes(v)
+    ? "bg-emerald-100 text-emerald-700"
+    : ["OPEN", "DRAFT"].includes(v)
+      ? "bg-amber-100 text-amber-800"
+      : "bg-slate-200 text-slate-700";
+  return (
+    <span
+      className={`inline-flex min-h-7 items-center justify-center rounded-full px-3 py-1 text-center text-[11px] font-black leading-none ${c}`}
+    >
+      {v.replaceAll("_", " ")}
+    </span>
+  );
+}
+function Modal({
+  title,
+  close,
+  wide,
+  children,
+}: {
+  title: string;
+  close: () => void;
+  wide?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      className={`mx-auto w-full space-y-6 ${wide ? "max-w-5xl" : "max-w-3xl"}`}
+    >
+      <Head
+        title={title}
+        action={
+          <button className="btn secondary" onClick={close}>
+            Back
+          </button>
+        }
+      />
+      <div className="card">{children}</div>
+    </section>
+  );
+}
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label>
+      <span className="mb-2 block text-sm font-bold">{label}</span>
+      {children}
+    </label>
+  );
+}
+function PasswordInput({
+  value,
+  onChange,
+  required,
+  autoComplete,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+  autoComplete: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        required={required}
+        autoComplete={autoComplete}
+        type={visible ? "text" : "password"}
+        className="input pr-12"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((current) => !current)}
+        className="absolute right-2 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-950"
+        aria-label={visible ? "Hide password" : "Show password"}
+        title={visible ? "Hide password" : "Show password"}
+      >
+        <EyeIcon hidden={visible} />
+      </button>
+    </div>
+  );
+}
+function EyeIcon({ hidden }: { hidden: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {hidden ? (
+        <>
+          <path d="M3 3l18 18" />
+          <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+          <path d="M9.9 4.2A10.8 10.8 0 0 1 12 4c6 0 10 8 10 8a16 16 0 0 1-2 3" />
+          <path d="M6.6 6.6C3.8 8.5 2 12 2 12s4 8 10 8a9.8 9.8 0 0 0 5.4-1.6" />
+        </>
+      ) : (
+        <>
+          <path d="M2 12s4-8 10-8 10 8 10 8-4 8-10 8S2 12 2 12Z" />
+          <circle cx="12" cy="12" r="3" />
+        </>
+      )}
+    </svg>
+  );
+}
+function Actions({ close, label }: { close: () => void; label: string }) {
+  return (
+    <div className="form-actions flex flex-col-reverse gap-3 sm:col-span-2 sm:flex-row sm:justify-end">
+      <button type="button" className="btn secondary" onClick={close}>
+        Cancel
+      </button>
+      <button className="btn primary">{label}</button>
+    </div>
+  );
+}
+function Alert({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-700">
+      {children}
+    </div>
+  );
+}
+function EmptyState({
+  message = "Belum ada data yang tersedia.",
+}: {
+  message?: string;
+}) {
+  return (
+    <div className="grid min-h-36 place-items-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+      <div>
+        <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-white text-xl font-black text-slate-400 shadow-sm">
+          -
+        </div>
+        <h3 className="mt-4 text-lg font-black text-slate-950">
+          Data Tidak Ada
+        </h3>
+        <p className="mt-1 text-sm text-slate-500">{message}</p>
+      </div>
+    </div>
+  );
+}
+function ConfirmDialog({
+  title,
+  message,
+  confirmLabel = "Delete",
+  busy = false,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  busy?: boolean;
+  onConfirm: () => void | Promise<void>;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/55 p-4"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onClose();
+      }}
+    >
+      <section
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        className="w-full max-w-md rounded-[2rem] border border-white bg-white p-6 shadow-2xl sm:p-8"
+      >
+        <div className="grid h-12 w-12 place-items-center rounded-2xl bg-rose-50 text-xl font-black text-rose-700">
+          !
+        </div>
+        <h2
+          id="confirm-title"
+          className="mt-5 text-2xl font-black text-slate-950"
+        >
+          {title}
+        </h2>
+        <p className="mt-3 leading-7 text-slate-600">{message}</p>
+        <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            disabled={busy}
+            className="btn secondary"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            className="btn bg-rose-700 text-white disabled:opacity-60"
+            onClick={onConfirm}
+          >
+            {busy ? "Deleting..." : confirmLabel}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+const who = (d: AppData, id: string) =>
+  d.users.find((u) => u.id === id)?.name || "Unknown";
+
+const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+const dateTime = (value: string) =>
+  new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: browserTimeZone(),
+    timeZoneName: "short",
+  }).format(new Date(value));
+
+const dateTimeLocal = (value: string) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: browserTimeZone(),
+  }).formatToParts(new Date(value));
+
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+
+  return `${part("year")}-${part("month")}-${part(
+    "day",
+  )}T${part("hour")}:${part("minute")}`;
+};
+
+const sourceRelationship = (relationship: Relationship): Relationship =>
+  relationship === "MANAGER"
+    ? "SUBORDINATE"
+    : relationship === "SUBORDINATE"
+      ? "MANAGER"
+      : relationship;
+const anonymousSourceLabel = (
+  assignments: Assignment[],
+  assignment: Assignment,
+) => {
+  const source = sourceRelationship(assignment.relationship);
+  if (source === "SELF") return "Self";
+  const peers = assignments.filter(
+      (item) => sourceRelationship(item.relationship) === source,
+    ),
+    number = peers.findIndex((item) => item.id === assignment.id) + 1;
+  return `${source[0]}${source.slice(1).toLowerCase()} ${number}`;
+};
+function ResultReport({
+  review,
+  personId,
+  data,
+  back,
+}: {
+  review: PerformanceReview;
+  personId: string;
+  data: AppData;
+  back: () => void;
+}) {
+  const incoming = review.assignments.filter(
+      (a) => a.revieweeId === personId && a.status === "SUBMITTED",
+    ),
+    counts = new Map<Relationship, number>();
+  return (
+    <div className="report-page mx-auto max-w-5xl space-y-6">
+      <Head
+        title="Review Result"
+        action={
+          <div className="no-print flex gap-2">
+            <button className="btn secondary" onClick={back}>
+              Back
+            </button>
+            <button className="btn primary" onClick={() => window.print()}>
+              Export PDF
+            </button>
+          </div>
+        }
+      />
+      <div className="card">
+        <p className="eyebrow">{review.title}</p>
+        <h2 className="mt-2 text-2xl font-black">{who(data, personId)}</h2>
+        <div className="mt-2 space-y-1 text-sm text-slate-500">
+          <p>
+            Start Date:{" "}
+            <span className="font-semibold text-slate-700">
+              {dateTime(review.startDate)}
+            </span>
+          </p>
+
+          <p>
+            Due Date:{" "}
+            <span className="font-semibold text-slate-700">
+              {dateTime(review.endDate)}
+            </span>
+          </p>
+        </div>
+      </div>
+      {incoming.map((a) => {
+        const source = sourceRelationship(a.relationship),
+          number = (counts.get(source) ?? 0) + 1;
+        counts.set(source, number);
+        const label =
+          source === "SELF"
+            ? "Self"
+            : `${source[0]}${source.slice(1).toLowerCase()} ${number}`;
+        return (
+          <section className="card report-section" key={a.id}>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-xl font-black">From {label}</h3>
+              <Badge v={source} />
+            </div>
+            <div className="mt-5 space-y-4">
+              {review.questions
+                .filter((q) => q.relationship === a.relationship)
+                .map((q) => (
+                  <div key={q.id} className="rounded-2xl bg-slate-50 p-4">
+                    <p className="text-sm font-bold text-slate-600">{q.text}</p>
+                    <p className="mt-2 font-black">
+                      {a.answers[q.id] ?? "-"}
+                      {q.type === "RATING_1_5" ? " / 5" : ""}
+                    </p>
+                  </div>
+                ))}
+            </div>
+          </section>
+        );
+      })}
+      {!incoming.length && (
+        <div className="card text-slate-500">
+          No submitted results are available.
+        </div>
+      )}
+    </div>
+  );
+}
+function Results({ data }: { data: AppData }) {
+  const [reviewId, setReviewId] = useState(""),
+    [personId, setPersonId] = useState("");
+  const review = data.reviews.find((item) => item.id === reviewId),
+    people = review
+      ? [
+          ...new Set(
+            review.assignments
+              .filter((a) => a.relationship === "SELF")
+              .map((a) => a.revieweeId),
+          ),
+        ]
+      : [];
+  if (review && personId)
+    return (
+      <ResultReport
+        review={review}
+        personId={personId}
+        data={data}
+        back={() => setPersonId("")}
+      />
+    );
+  return (
+    <div className="space-y-6">
+      <Head title="Review Results" />
+      <div className="card form-stack">
+        <Field label="Performance Review">
+          <select
+            className="input"
+            value={reviewId}
+            onChange={(event) => {
+              setReviewId(event.target.value);
+              setPersonId("");
+            }}
+          >
+            <option value="">Select review</option>
+            {data.reviews.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.title}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {review && (
+          <Field label="Reviewed User">
+            <UserPicker
+              users={data.users.filter((user) => people.includes(user.id))}
+              selected={personId ? [personId] : []}
+              onChange={(values) => setPersonId(values.at(-1) ?? "")}
+              placeholder="Search reviewed user..."
+            />
+          </Field>
+        )}
+      </div>
+    </div>
+  );
+}
