@@ -427,9 +427,7 @@ Admin can:
 - delete
 - reorder
 
-Use drag-and-drop reorder only if it fits naturally with the existing stack and does not add unnecessary complexity.
-
-A simple move-up/move-down interaction is acceptable for V1.
+Question ordering uses explicit `Up` and `Down` buttons. Disable `Up` for the first question and `Down` for the last question. Do not use drag-and-drop for this interaction.
 
 ---
 
