@@ -172,3 +172,7 @@ No application defect has been fixed. Please choose whether to:
 
 1. provide/approve a dedicated empty Neon test branch/database via `SYSTEM_TEST_DATABASE_URL` and continue the remaining tests before fixing anything; or
 2. review/prioritize the eight confirmed failures first and authorize a later bug-fix phase.
+
+## 8. Post-Report Change Note (20 August 2026)
+
+This report remains a historical record of the preliminary test execution and must not be read as a current retest result. Subsequent authorized implementation work changed the application after this report was written, including custom confirmation/feedback popups, draft save feedback, atomic create/delete handling, result visibility for unanswered assignments, dashboard filtering, print exclusion for the mobile header/Menu, and the Neon `guard_performance_review_questions()` trigger deployment. The full functional, anomaly, concurrency, and responsive retest suite has **not** yet been rerun; all affected cases remain pending retest in `SYSTEM_TEST_PLAN.md`.

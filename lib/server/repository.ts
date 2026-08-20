@@ -139,7 +139,6 @@ export async function loadApplicationData(
             OR (
               ra.reviewee_user_id = ${session.id}::bigint
               AND statement_timestamp() >= pr.end_at
-              AND ra.status = 'SUBMITTED'
             )
         `,
 
@@ -305,7 +304,8 @@ export async function saveTemplateQuestion(
     await sql`INSERT INTO template_questions(template_id,question_text,question_type,sort_order) SELECT id,${q.text},${q.type},COALESCE((SELECT MAX(sort_order)+1 FROM template_questions WHERE template_id=question_templates.id),1) FROM question_templates WHERE relationship_type=${rel}`;
 }
 export async function deleteTemplateQuestion(id: string) {
-  await db()`DELETE FROM template_questions WHERE id=${id}::bigint`;
+  const deleted = await db()`DELETE FROM template_questions WHERE id=${id}::bigint RETURNING id`;
+  if (!deleted[0]) throw new Error("Question tidak ditemukan atau sudah dihapus.");
 }
 export async function reorderTemplateQuestions(ids: string[]) {
   const sql = db();
@@ -340,6 +340,12 @@ export async function createPerformanceReview(
     throw new Error("End Date harus setelah Start Date.");
   if (!input.revieweeIds.length) throw new Error("Pilih minimal satu peserta.");
   const sql = db();
+  const unique = new Map<string, RelationshipLink>();
+  for (const link of input.relationships ?? []) {
+    if (link.revieweeId === link.reviewerId) continue;
+    unique.set(`${link.revieweeId}:${link.reviewerId}`, link);
+  }
+  const links = [...unique.values()];
   const rows = await sql`
   WITH new_review AS (
     INSERT INTO performance_reviews(
@@ -362,6 +368,14 @@ export async function createPerformanceReview(
     SELECT copy_templates_to_performance_review(id) copied_count
     FROM new_review
   ),
+  relationship_links AS (
+    SELECT reviewee_id, reviewer_id, relationship
+    FROM unnest(
+      ${links.map((link) => link.revieweeId)}::bigint[],
+      ${links.map((link) => link.reviewerId)}::bigint[],
+      ${links.map((link) => link.relationship)}::text[]
+    ) AS link(reviewee_id, reviewer_id, relationship)
+  ),
   self_assignments AS (
     INSERT INTO review_assignments(
       performance_review_id,
@@ -373,22 +387,46 @@ export async function createPerformanceReview(
     FROM new_review nr
     CROSS JOIN unnest(${input.revieweeIds}::bigint[]) u
     RETURNING id
+  ),
+  relationship_assignments AS (
+    INSERT INTO review_assignments(
+      performance_review_id,
+      reviewer_user_id,
+      reviewee_user_id,
+      relationship_type
+    )
+    SELECT
+      nr.id,
+      assignment.reviewer_id,
+      assignment.reviewee_id,
+      assignment.relationship
+    FROM new_review nr
+    CROSS JOIN (
+      SELECT
+        reviewer_id,
+        reviewee_id,
+        CASE relationship
+          WHEN 'MANAGER' THEN 'SUBORDINATE'
+          WHEN 'SUBORDINATE' THEN 'MANAGER'
+          ELSE relationship
+        END AS relationship
+      FROM relationship_links
+      UNION ALL
+      SELECT reviewee_id AS reviewer_id, reviewer_id AS reviewee_id, relationship
+      FROM relationship_links
+    ) assignment
+    ON CONFLICT(performance_review_id, reviewer_user_id, reviewee_user_id)
+    DO NOTHING
+    RETURNING id
   )
   SELECT
     id::text,
     (SELECT copied_count FROM copied),
-    (SELECT COUNT(*) FROM self_assignments)
+    (SELECT COUNT(*) FROM self_assignments) +
+    (SELECT COUNT(*) FROM relationship_assignments) AS assignment_count
   FROM new_review
 `;
-  const reviewId = String(rows[0].id);
-  const unique = new Map<string, RelationshipLink>();
-  for (const link of input.relationships ?? []) {
-    if (link.revieweeId === link.reviewerId) continue;
-    unique.set(`${link.revieweeId}:${link.reviewerId}`, link);
-  }
-  for (const link of unique.values())
-    await createAssignment({ reviewId, ...link });
-  return reviewId;
+  return String(rows[0].id);
 }
 
 export async function updatePerformanceReview(input: {
@@ -406,13 +444,25 @@ export async function updatePerformanceReview(input: {
 }
 export async function deletePerformanceReview(id: string) {
   const sql = db();
-  await sql.transaction((txn) => [
-    txn`DELETE FROM review_answers WHERE review_assignment_id IN (SELECT id FROM review_assignments WHERE performance_review_id=${id}::bigint)`,
-    txn`DELETE FROM review_assignments WHERE performance_review_id=${id}::bigint`,
-    txn`UPDATE performance_reviews SET status='OPEN',start_at=NOW()+INTERVAL '1 day' WHERE id=${id}::bigint`,
-    txn`DELETE FROM performance_review_questions WHERE performance_review_id=${id}::bigint`,
-    txn`DELETE FROM performance_reviews WHERE id=${id}::bigint`,
-  ]);
+  const deleted = await sql`
+    WITH deleted_answers AS (
+      DELETE FROM review_answers
+      WHERE review_assignment_id IN (
+        SELECT id FROM review_assignments
+        WHERE performance_review_id = ${id}::bigint
+      )
+    ), deleted_assignments AS (
+      DELETE FROM review_assignments
+      WHERE performance_review_id = ${id}::bigint
+    ), deleted_questions AS (
+      DELETE FROM performance_review_questions
+      WHERE performance_review_id = ${id}::bigint
+    )
+    DELETE FROM performance_reviews
+    WHERE id = ${id}::bigint
+    RETURNING id
+  `;
+  if (!deleted[0]) throw new Error("Review tidak ditemukan atau sudah dihapus.");
 }
 export async function createAssignment(input: {
   reviewId: string;

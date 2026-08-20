@@ -14,8 +14,7 @@ HR/Admin controls:
 - reviewer relationships
 - review questions
 - review templates
-- review deadlines
-- review status
+- review schedule (Start Date and Due Date)
 - review monitoring
 
 Users can:
@@ -27,7 +26,7 @@ Users can:
 - save drafts
 - continue drafts
 - submit completed reviews
-- edit submitted reviews before the deadline
+- edit submitted reviews before the exclusive Due Date while the review is `IN_PROGRESS`
 - view reviews about themselves after the Performance Review is closed
 
 The system is intentionally limited to Performance Review functionality for V1.
@@ -137,13 +136,17 @@ Admin creates and manages Performance Reviews.
 
 Admin may permanently delete a Performance Review. Deletion is an Admin-only destructive action, requires explicit confirmation, and removes its assignments, answers, and question snapshot atomically.
 
+After deletion succeeds, the Performance Review must no longer be visible to any reviewer, reviewee, Admin dashboard/list, My Reviews, Reviews About Me, or Review Results. No relationship assignment or answer belonging to that Performance Review may remain.
+
+Review creation is atomic. The Performance Review, copied question snapshots, self assignments, and all reciprocal hierarchy assignments must either all be created successfully or none may persist.
+
 Each Performance Review contains:
 
 - Title
 - Description
 - Start Date
-- End Date / Deadline
-- Status
+- End Date / Due Date
+- Status (system-managed)
 
 ### Performance Review Status
 
@@ -153,15 +156,19 @@ The available statuses are:
 - `IN_PROGRESS`
 - `CLOSED`
 
+Status is derived automatically from the Performance Review schedule using PostgreSQL database time. Admin does not manually select or force a Performance Review status.
+
 ### Status Meaning
 
 #### OPEN
 
-The Performance Review has been created but the review period has not started yet.
+`database_time < start_at`
 
-Users may be able to see that the review exists, but cannot fill it before the start date.
+The Performance Review has been created but the review period has not started yet. Users may be able to see that the review exists, but cannot fill it before the Start Date.
 
 #### IN_PROGRESS
+
+`start_at <= database_time < end_at`
 
 The review period is active.
 
@@ -176,7 +183,9 @@ During this period, assigned Users can:
 
 #### CLOSED
 
-The review period has ended or HR/Admin has closed it.
+`database_time >= end_at`
+
+The review period has ended automatically according to PostgreSQL database time. Admin does not manually force-close the Performance Review.
 
 All review answers become read-only.
 
@@ -184,40 +193,90 @@ Users who were reviewed may now see submitted reviews about themselves.
 
 ---
 
-## 5. Start Date and Deadline
+## 5. Start Date and Due Date
 
 Only Admin can configure:
 
-- Start Date
-- End Date / Deadline
+- Start Date (`start_at`)
+- End Date / Due Date (`end_at`)
 
-The dates control whether a review can be edited.
+`start_at` and `end_at` are absolute timestamps stored as PostgreSQL `TIMESTAMPTZ`. PostgreSQL database time is the source of truth for schedule/status and edit eligibility.
 
-A review is editable only when:
+A review is editable only when the backend/database verifies:
 
-- the Performance Review is not closed
-- the current date/time is on or after the Start Date
-- the current date/time is on or before the End Date
+```text
+start_at <= database_time < end_at
+```
 
-The backend/server must enforce these rules.
+Boundary behavior is mandatory:
 
-Do not rely only on disabled buttons in the frontend.
+- before `start_at` -> not editable
+- exactly at `start_at` -> editable
+- before `end_at` -> editable
+- exactly at `end_at` -> not editable
+- after `end_at` -> not editable
 
-### Deadline Changes
+The backend/server must enforce these rules using PostgreSQL time such as `statement_timestamp()` or `CURRENT_TIMESTAMP`. Do not rely only on disabled buttons, `Date.now()`, `new Date()`, or the user's device clock. Changing the browser/device clock must never allow early access or late submission.
 
-Admin may extend or shorten the deadline.
+### Database Status Synchronization
+
+The Neon database already contains:
+
+- `public.sync_performance_review_statuses()`
+- `public.set_performance_review_status_from_schedule()`
+- trigger `trg_performance_review_status_from_schedule` on `performance_reviews` schedule changes
+
+The trigger recalculates status when a Performance Review is inserted or when `start_at` / `end_at` changes. The sync function updates physical status values when the database receives traffic again.
+
+Neon may scale to zero while idle, so the system must not depend on a continuously running scheduler. `pg_cron`, a database background scheduler, WebSocket, SSE, or `LISTEN/NOTIFY` are not required for this lifecycle.
+
+For relevant Performance Review reads, the backend should:
+
+1. call `public.sync_performance_review_statuses()`
+2. read the Performance Review
+3. return an effective status calculated using PostgreSQL database time
+
+Equivalent effective-status rule:
+
+```sql
+CASE
+    WHEN statement_timestamp() >= end_at THEN 'CLOSED'
+    WHEN statement_timestamp() >= start_at THEN 'IN_PROGRESS'
+    ELSE 'OPEN'
+END
+```
+
+Save, submit, finalize, and other editable-only operations must validate the active time window directly in SQL instead of relying only on the physical `status` column.
+
+### Due Date Changes
+
+Admin may extend or shorten the Due Date.
 
 Example:
 
-Original deadline:
+Original Due Date:
 
-`31 August 2026`
+`31 August 2026, 17:00 WIB`
 
-Updated deadline:
+Updated Due Date:
 
-`5 September 2026`
+`5 September 2026, 17:00 WIB`
 
-If the Performance Review is not force-closed, submitted reviews become editable again until the new deadline.
+After a successful schedule update, the application refetches the Performance Review and uses the status returned by the backend/database. If a previously closed review is rescheduled so that the current database time is inside the new window, the database trigger may return it to `IN_PROGRESS`.
+
+### Timezone and Date/Time Display
+
+All user-facing Performance Review dates must display **date + time + timezone** according to the browser's IANA timezone. The same absolute timestamp may therefore display differently in Jakarta, Makassar, or Jayapura while representing the same instant.
+
+Use native timezone support such as `Intl.DateTimeFormat().resolvedOptions().timeZone`. Do not hardcode `UTC+7`, `UTC+8`, `UTC+9`, or manually add/subtract hours.
+
+When Admin uses a local `datetime-local` field, the frontend must convert the selected local wall-clock time to an unambiguous absolute ISO timestamp before sending it to the backend.
+
+### Frontend Status Refresh
+
+While the application is open, relevant Performance Review data should be refetched approximately every 10 seconds so status changes appear without F5/full-page reload. Also refetch when the window regains focus or the browser tab becomes visible again. Intervals and event listeners must be cleaned up when no longer needed.
+
+The review questionnaire screen must clearly show both **Start Date** and **Due Date**, including their time and timezone. Dashboard, Performance Review list, My Reviews, and Review Result date displays must also include time and timezone.
 
 ---
 
@@ -318,10 +377,7 @@ Drafts may be incomplete.
 
 The Reviewer has completed and submitted the review.
 
-A submitted review may still be edited while:
-
-- the Performance Review is not closed
-- the deadline has not passed
+A submitted review may still be edited only while PostgreSQL database time is inside the active Performance Review window (`start_at <= database_time < end_at`).
 
 Submitting does not permanently lock the answers.
 
@@ -349,7 +405,7 @@ Autosave may also be implemented, but it does not replace the explicit draft beh
 
 ## 10. Submit Validation
 
-A User may submit a review only when **all questions have been answered**.
+A User may submit a review only when **all questions have been answered** and PostgreSQL database time is still inside the active Performance Review window (`start_at <= database_time < end_at`).
 
 Draft:
 
@@ -367,17 +423,17 @@ For V1, all review questions are required.
 
 ## 11. Editing Submitted Reviews
 
-A submitted review remains editable until the deadline.
+A submitted review remains editable only while PostgreSQL database time is before the exclusive Due Date (`end_at`) and on/after `start_at`.
 
 Example:
 
-Performance Review deadline:
+Performance Review Due Date:
 
-`31 August 2026`
+`31 August 2026, 17:00 WIB`
 
 User submits:
 
-`20 August 2026`
+`20 August 2026, 10:00 WIB`
 
 The User may continue to:
 
@@ -391,7 +447,7 @@ The assignment may remain `SUBMITTED` while edits are made.
 
 It does not need to return to `DRAFT`.
 
-Once the Performance Review is closed or the deadline passes, the review becomes read-only.
+At exactly the Due Date (`database_time == end_at`) and afterward, the review becomes read-only.
 
 ---
 
@@ -441,6 +497,8 @@ Relationship mapping:
 Templates are starting points for Performance Reviews.
 
 They are not permanent live references.
+
+Deleting a Question Template item removes it only from the reusable template. It must not remove or alter a question snapshot already copied into an existing Performance Review. The snapshot's optional source-template reference may be cleared safely.
 
 ---
 
@@ -554,9 +612,16 @@ Admin Dashboard may show high-level review monitoring such as:
 
 Avoid advanced analytics in V1.
 
+Admin Dashboard contains two distinct lists:
+
+- **Review Sedang Berjalan**: `IN_PROGRESS` Performance Reviews; opening an item leads to review configuration/editing.
+- **Review yang Perlu Dikerjakan**: the Admin's own `OPEN` or `IN_PROGRESS` assignments that are not yet submitted; opening an item leads to the questionnaire. `CLOSED` assignments never appear in this dashboard list.
+
 ### Review Results
 
 Admin can select a Performance Review and Reviewee to open a consolidated, print-ready report. The report groups submitted feedback by source relationship without reviewer names and supports browser-based PDF export.
+
+The printed/PDF report must hide application navigation and interactive controls, including the mobile header and Menu button. Browser-generated headers/footers (such as URL or page time) are controlled by the browser print-dialog setting, not by the application.
 
 ---
 
@@ -584,15 +649,19 @@ Possible actions:
 Actions depend on:
 
 - assignment status
-- Performance Review status
-- current date
-- deadline
+- effective Performance Review status returned by the backend
+- the active schedule validated using PostgreSQL database time
+- the Start Date and exclusive Due Date
+
+Dashboard work lists may show an `OPEN` assignment as notice, but it remains non-editable until `IN_PROGRESS`.
 
 ### Reviews About Me
 
 Shows reviews where the User is the Reviewee.
 
 Results are only visible after the Performance Review is `CLOSED`.
+
+Before closure, a Reviewee may be shown that they will receive feedback grouped by anonymous relationship label, but cannot see answers or reviewer identity. After closure, every incoming assignment must be shown. A submitted assignment displays its answers; an unsubmitted assignment displays a clear statement that the feedback was not filled in. Draft answers remain confidential.
 
 ---
 
@@ -608,7 +677,8 @@ Admin can:
 - activate/deactivate users
 - reset user passwords
 - create/edit Performance Reviews
-- set start date and deadline
+- set Start Date and Due Date
+- view system-managed Performance Review status (not manually override it)
 - choose Reviewees
 - assign Reviewers
 - assign reviewer relationships
@@ -631,7 +701,7 @@ User can:
 - save drafts
 - continue drafts
 - submit completed reviews
-- edit submitted reviews before deadline
+- edit submitted reviews before the exclusive Due Date while the review is `IN_PROGRESS`
 - view own incoming review results after Performance Review is closed
 
 Reviewer identities are confidential in employee-facing results. Results use relationship labels such as `Manager`, `Peer 1`, `Peer 2`, or `Subordinate 1` instead of names. The same anonymity applies to exported reports.
@@ -644,6 +714,10 @@ User cannot:
 - configure templates
 - configure reviewer assignments
 - edit reviews written by another person
+
+### Operation Feedback
+
+Create, edit, question reorder, save draft, submit, and delete operations use application-styled dialogs/popups rather than native browser dialogs. On success, show `Data Berhasil Di Simpan` (or equivalent action-specific acknowledgement) and only then navigate away when applicable. On failure, show a human-readable failure message and remain on the current page.
 
 ---
 
@@ -680,17 +754,17 @@ ADMIN
   +-- Create Performance Review
         |
         +-- Set Title & Description
-        +-- Set Start Date & Deadline
+        +-- Set Start Date & Due Date
         +-- Select Reviewees
         +-- SELF assignment
         +-- Assign MANAGER / PEER / SUBORDINATE reviewers
         +-- Load Question Templates
         +-- Customize Questions
         |
-        +-- OPEN
+        +-- OPEN (DB time < Start Date)
               |
               v
-        IN_PROGRESS
+        IN_PROGRESS (Start Date <= DB time < Due Date)
               |
               v
           USER REVIEWS
@@ -701,10 +775,10 @@ ADMIN
         |                        |
      Continue                 Submit
                                  |
-                                 +-- Editable until deadline
+                                 +-- Editable while DB time < Due Date
                                  |
                                  v
-                              CLOSED
+                              CLOSED (DB time >= Due Date)
                                  |
                     +------------+-------------+
                     |                          |

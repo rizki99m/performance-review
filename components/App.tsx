@@ -39,6 +39,12 @@ type View =
   | "results";
 type Common = { data: AppData; refresh: () => Promise<void> };
 const rels: Relationship[] = ["SELF", "MANAGER", "PEER", "SUBORDINATE"];
+type PopupDetail = { kind: "success" | "error"; message: string; resolve?: () => void };
+function popup(kind: PopupDetail["kind"], message: string) {
+  return new Promise<void>((resolve) => window.dispatchEvent(new CustomEvent<PopupDetail>("doki-popup", { detail: { kind, message, resolve } })));
+}
+const successPopup = (message = "Data Berhasil Di Simpan") => popup("success", message);
+const errorPopup = (message = "Data gagal disimpan") => popup("error", message);
 export function App() {
   const [data, setData] = useState<AppData | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -48,6 +54,33 @@ export function App() {
   const [loadError, setLoadError] = useState("");
   const [authChecked, setAuthChecked] = useState(false);
   const [refreshError, setRefreshError] = useState("");
+  const [popupState, setPopupState] = useState<PopupDetail | null>(null);
+
+  const navigate = (next: View, replace = false) => {
+    setView(next);
+    if (typeof window !== "undefined") {
+      const state = { view: next };
+      if (replace) window.history.replaceState(state, "", window.location.href);
+      else window.history.pushState(state, "", window.location.href);
+    }
+  };
+
+  useEffect(() => {
+    const handler = (event: Event) => setPopupState((event as CustomEvent<PopupDetail>).detail);
+    window.addEventListener("doki-popup", handler);
+    return () => window.removeEventListener("doki-popup", handler);
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const next = event.state?.view as View | undefined;
+      if (next) setView(next);
+      else setView("dashboard");
+    };
+    window.history.replaceState({ view: "dashboard" }, "", window.location.href);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     loadData()
@@ -253,7 +286,7 @@ export function App() {
           <button
             key={k}
             onClick={() => {
-              setView(k);
+              if (view !== k) navigate(k);
               setMenu(false);
             }}
             className={`block w-full rounded-2xl px-4 py-3 text-left text-sm font-black ${view === k ? "bg-slate-950 text-white" : "hover:bg-slate-100"}`}
@@ -284,7 +317,7 @@ export function App() {
 
   return (
     <main className="min-h-screen">
-      <header className="sticky top-0 z-30 flex items-center justify-between bg-white p-4 lg:hidden">
+      <header className="no-print sticky top-0 z-30 flex items-center justify-between bg-white p-4 lg:hidden">
         <Brand />
         <button className="btn secondary" onClick={() => setMenu(true)}>
           Menu
@@ -299,9 +332,9 @@ export function App() {
             className="h-full w-80 max-w-[88vw]"
             onClick={(e) => e.stopPropagation()}
           >
-            <Side mobile />
-          </div>
-        </div>
+             <Side mobile />
+           </div>
+    </div>
       )}
       <div className="flex">
         <div
@@ -329,6 +362,7 @@ export function App() {
           {content}
         </section>
       </div>
+      {popupState && <Popup {...popupState} onClose={() => { const resolve = popupState.resolve; setPopupState(null); resolve?.(); }} />}
     </main>
   );
 }
@@ -409,6 +443,16 @@ function CloseIcon() {
       <path d="M18 6 6 18" />
     </svg>
   );
+}
+function Popup({ kind, message, onClose }: PopupDetail & { onClose: () => void }) {
+  return <div className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/45 p-4" role="dialog" aria-modal="true">
+    <div className="card w-full max-w-md">
+      <div className={`mx-auto grid h-14 w-14 place-items-center rounded-full text-2xl font-black ${kind === "success" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>{kind === "success" ? "✓" : "!"}</div>
+      <h2 className="mt-4 text-center text-2xl font-black">{kind === "success" ? "Berhasil" : "Gagal"}</h2>
+      <p className="mt-2 text-center text-slate-600">{message}</p>
+      <button className="btn primary mt-6 w-full" onClick={onClose}>OK</button>
+    </div>
+  </div>;
 }
 function ArrowIcon({ direction }: { direction: "up" | "down" }) {
   return (
@@ -594,10 +638,11 @@ function Dashboard({
           value={items.filter((a) => a.status === "SUBMITTED").length}
         />
       </div>
+      {user.role === "ADMIN" ? <>
       <div className="card space-y-4">
-        <h2 className="text-xl font-black">Review</h2>
-        {reviews.length ? (
-          reviews.map((r) => {
+        <h2 className="text-xl font-black">Review Sedang Berjalan</h2>
+        {reviews.filter((r) => r.status === "IN_PROGRESS").length ? (
+          reviews.filter((r) => r.status === "IN_PROGRESS").map((r) => {
             const assignment = r.assignments.find(
               (a) => a.reviewerId === user.id,
             );
@@ -627,9 +672,16 @@ function Dashboard({
             );
           })
         ) : (
-          <EmptyState message="Belum ada review yang tersedia." />
+          <EmptyState message="Tidak ada review yang sedang berjalan." />
         )}
       </div>
+      <div className="card space-y-4">
+        <h2 className="text-xl font-black">Review yang Perlu Dikerjakan</h2>
+        {mine.filter((a) => a.status !== "SUBMITTED" && reviews.some((r) => r.id === a.reviewId && r.status !== "CLOSED")).length ? mine.filter((a) => a.status !== "SUBMITTED").map((a) => { const r = reviews.find((item) => item.id === a.reviewId); return r && r.status !== "CLOSED" ? <button type="button" key={a.id} onClick={() => setSelected({a, r})} className="block w-full rounded-2xl border border-slate-200 p-4 text-left hover:border-emerald-400"><Row a={a} r={r} data={data} /></button> : null; }) : <EmptyState message="Tidak ada review yang perlu dikerjakan." />}
+      </div></> : <div className="card space-y-4">
+        <h2 className="text-xl font-black">Review</h2>
+        {mine.filter((a) => reviews.some((r) => r.id === a.reviewId && r.status !== "CLOSED")).length ? mine.map((a) => { const r = reviews.find((item) => item.id === a.reviewId); return r && r.status !== "CLOSED" ? <button type="button" key={a.id} onClick={() => setSelected({a, r})} className="block w-full rounded-2xl border border-slate-200 p-4 text-left hover:border-emerald-400"><Row a={a} r={r} data={data} /></button> : null; }) : <EmptyState message="Tidak ada review yang sedang berjalan untuk dikerjakan." />}
+       </div>}
     </div>
   );
 }
@@ -747,9 +799,12 @@ function UserModal({
               role: f.role as User["role"],
               status: f.status as User["status"],
             });
+            await successPopup();
             done();
           } catch (x) {
-            setError((x as Error).message);
+            const message = (x as Error).message;
+            setError(message);
+            await errorPopup(message);
           }
         }}
       >
@@ -821,15 +876,16 @@ function UserModal({
 }
 function Templates({ data, refresh }: Common) {
   const [rel, setRel] = useState<Relationship>("SELF"),
-    [edit, setEdit] = useState<Question | null | undefined>();
+    [edit, setEdit] = useState<Question | null | undefined>(),
+    [deleteQuestionPending, setDeleteQuestion] = useState<Question | null>(null);
   const list = [...data.templates[rel]].sort((a, b) => a.order - b.order);
   const move = async (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= list.length) return;
     const ids = list.map((q) => q.id);
     [ids[index], ids[target]] = [ids[target], ids[index]];
-    await reorderQuestions(ids);
-    await refresh();
+    try { await reorderQuestions(ids); await successPopup(); await refresh(); }
+    catch (x) { await errorPopup((x as Error).message); }
   };
   if (edit !== undefined)
     return (
@@ -843,9 +899,9 @@ function Templates({ data, refresh }: Common) {
             order: edit?.order,
             text,
             type,
-          });
-          setEdit(undefined);
-          await refresh();
+           });
+           setEdit(undefined);
+           await refresh();
         }}
       />
     );
@@ -920,10 +976,7 @@ function Templates({ data, refresh }: Common) {
                 <button
                   className="btn small text-rose-700"
                   onClick={async () => {
-                    if (confirm("Delete this question?")) {
-                      await deleteQuestion(q.id);
-                      await refresh();
-                    }
+                    setDeleteQuestion(q);
                   }}
                 >
                   Delete
@@ -935,6 +988,7 @@ function Templates({ data, refresh }: Common) {
           <EmptyState message="Belum ada pertanyaan untuk template ini." />
         )}
       </div>
+      {deleteQuestionPending && <ConfirmDialog title="Delete Question?" message="Question ini akan dihapus." onClose={() => setDeleteQuestion(null)} onConfirm={async () => { try { await deleteQuestion(deleteQuestionPending.id); setDeleteQuestion(null); await successPopup(); await refresh(); } catch (x) { await errorPopup((x as Error).message); } }} />}
     </div>
   );
 }
@@ -1044,7 +1098,7 @@ function QuestionModal({
         className="space-y-4"
         onSubmit={async (e) => {
           e.preventDefault();
-          await done(t, y);
+          try { await done(t, y); await successPopup(); } catch (x) { await errorPopup((x as Error).message); }
         }}
       >
         <Field label="Question">
@@ -1190,13 +1244,15 @@ function Reviews({ data, refresh }: Common) {
           message={`Review "${pendingDelete.title}" beserta seluruh assignment, jawaban, dan hasilnya akan dihapus permanen.`}
           busy={deleting}
           onClose={() => setPendingDelete(null)}
-          onConfirm={async () => {
-            setDeleting(true);
-            try {
-              await deleteReview(pendingDelete.id);
-              setPendingDelete(null);
-              await refresh();
-            } finally {
+           onConfirm={async () => {
+             setDeleting(true);
+             try {
+               await deleteReview(pendingDelete.id);
+               setPendingDelete(null);
+               await successPopup();
+               await refresh();
+             } catch (x) { await errorPopup((x as Error).message);
+             } finally {
               setDeleting(false);
             }
           }}
@@ -1249,21 +1305,26 @@ function Create({
           setError("");
           if (!f.title.trim() || !f.startDate || !f.endDate) {
             setError("Lengkapi Title, Start Date, dan End Date.");
+            await errorPopup("Lengkapi Title, Start Date, dan End Date.");
             return;
           }
           if (new Date(f.endDate) <= new Date(f.startDate)) {
             setError("End Date harus setelah Start Date.");
+            await errorPopup("End Date harus setelah Start Date.");
             return;
           }
           if (!ids.length) {
             setError("Pilih minimal satu peserta review.");
+            await errorPopup("Pilih minimal satu peserta review.");
             return;
           }
           try {
             await createReview(data, f, ids, links);
+            await successPopup();
             await done();
           } catch (x) {
             setError((x as Error).message);
+            await errorPopup((x as Error).message);
           }
         }}
       >
@@ -1517,9 +1578,11 @@ function ReviewModal({
             }
             try {
               await updateReview({ id: review.id, ...form });
+              await successPopup();
               await done();
             } catch (x) {
               setError((x as Error).message);
+              await errorPopup((x as Error).message);
             }
           }}
         >
@@ -1664,9 +1727,11 @@ function AssignmentModal({
           }
           try {
             await addAssignment(data, review.id, revieweeId, er, rel);
+            await successPopup();
             await done();
           } catch (x) {
             setError((x as Error).message);
+            await errorPopup((x as Error).message);
           }
         }}
       >
@@ -1767,6 +1832,8 @@ function ReviewForm({
     [answers, setAnswers] = useState({ ...a.answers }),
     [missing, setMissing] = useState<string[]>([]),
     [error, setError] = useState(""),
+    [saving, setSaving] = useState(false),
+    [submitConfirm, setSubmitConfirm] = useState(false),
     can = editable(r);
   const persist = async (submit: boolean) => {
     const m = qs
@@ -1777,10 +1844,15 @@ function ReviewForm({
       return;
     }
     try {
+      setSaving(true);
       await saveAnswers(a.id, answers, submit);
+      await successPopup();
       await done();
     } catch (x) {
       setError((x as Error).message);
+      await errorPopup((x as Error).message);
+    } finally {
+      setSaving(false);
     }
   };
   return (
@@ -1858,25 +1930,19 @@ function ReviewForm({
         ))}
         {can && (
           <div className="flex justify-end gap-3">
-            <button className="btn secondary" onClick={() => persist(false)}>
-              Save Draft
+            <button className="btn secondary" disabled={saving} onClick={() => persist(false)}>
+              {saving ? "Saving..." : "Save Draft"}
             </button>
             <button
               className="btn primary"
-              onClick={() => {
-                if (
-                  confirm(
-                    "Submit this review? You can still edit it until the deadline.",
-                  )
-                )
-                  persist(true);
-              }}
+              onClick={() => setSubmitConfirm(true)}
             >
               Submit Review
             </button>
           </div>
         )}
       </div>
+      {submitConfirm && <ConfirmDialog title="Submit this review?" message="You can still edit it until the deadline." confirmLabel="Submit" busyLabel="Submitting..." destructive={false} onClose={() => setSubmitConfirm(false)} onConfirm={async () => { setSubmitConfirm(false); await persist(true); }} />}
     </Modal>
   );
 }
@@ -1895,16 +1961,16 @@ function Received({ data, user }: { data: AppData; user: User }) {
               <Badge v={r.status} />
             </div>
             {r.status !== "CLOSED" ? (
-              <p className="mt-5 rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500">
-                Results will be available after the Performance Review is
-                closed.
-              </p>
+              <div className="mt-5 rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500">
+                <p>Anda akan dinilai oleh hubungan yang sudah ditetapkan. Hasil baru tersedia setelah Performance Review selesai.</p>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  {r.assignments.filter((a) => a.revieweeId === user.id).map((a) => <Badge key={a.id} v={anonymousSourceLabel(r.assignments.filter((item) => item.revieweeId === user.id), a)} />)}
+                </div>
+              </div>
             ) : (
               <div className="mt-5 space-y-4">
                 {r.assignments
-                  .filter(
-                    (a) => a.revieweeId === user.id && a.status === "SUBMITTED",
-                  )
+                  .filter((a) => a.revieweeId === user.id)
                   .map((a) => (
                     <div className="rounded-2xl border p-4" key={a.id}>
                       <Badge v={sourceRelationship(a.relationship)} />
@@ -1912,16 +1978,12 @@ function Received({ data, user }: { data: AppData; user: User }) {
                         From{" "}
                         {anonymousSourceLabel(
                           r.assignments.filter(
-                            (item) =>
-                              item.revieweeId === user.id &&
-                              item.status === "SUBMITTED",
+                            (item) => item.revieweeId === user.id,
                           ),
                           a,
                         )}
                       </b>
-                      {r.questions
-                        .filter((q) => q.relationship === a.relationship)
-                        .map((q) => (
+                      {a.status !== "SUBMITTED" ? <p className="mt-3 text-sm text-slate-500">Penilaian dari hubungan ini belum diisi.</p> : r.questions.filter((q) => q.relationship === a.relationship).map((q) => (
                           <div className="mt-3" key={q.id}>
                             <p className="text-sm font-bold text-slate-500">
                               {q.text}
@@ -2127,6 +2189,8 @@ function ConfirmDialog({
   title,
   message,
   confirmLabel = "Delete",
+  busyLabel = "Deleting...",
+  destructive = true,
   busy = false,
   onConfirm,
   onClose,
@@ -2134,6 +2198,8 @@ function ConfirmDialog({
   title: string;
   message: string;
   confirmLabel?: string;
+  busyLabel?: string;
+  destructive?: boolean;
   busy?: boolean;
   onConfirm: () => void | Promise<void>;
   onClose: () => void;
@@ -2152,7 +2218,7 @@ function ConfirmDialog({
         aria-labelledby="confirm-title"
         className="w-full max-w-md rounded-[2rem] border border-white bg-white p-6 shadow-2xl sm:p-8"
       >
-        <div className="grid h-12 w-12 place-items-center rounded-2xl bg-rose-50 text-xl font-black text-rose-700">
+        <div className={`grid h-12 w-12 place-items-center rounded-2xl text-xl font-black ${destructive ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>
           !
         </div>
         <h2
@@ -2174,10 +2240,10 @@ function ConfirmDialog({
           <button
             type="button"
             disabled={busy}
-            className="btn bg-rose-700 text-white disabled:opacity-60"
+            className={`btn text-white disabled:opacity-60 ${destructive ? "bg-rose-700" : "primary"}`}
             onClick={onConfirm}
           >
-            {busy ? "Deleting..." : confirmLabel}
+            {busy ? busyLabel : confirmLabel}
           </button>
         </div>
       </section>
@@ -2248,9 +2314,7 @@ function ResultReport({
   data: AppData;
   back: () => void;
 }) {
-  const incoming = review.assignments.filter(
-      (a) => a.revieweeId === personId && a.status === "SUBMITTED",
-    ),
+  const incoming = review.assignments.filter((a) => a.revieweeId === personId),
     counts = new Map<Relationship, number>();
   return (
     <div className="report-page mx-auto max-w-5xl space-y-6">
@@ -2286,7 +2350,12 @@ function ResultReport({
           </p>
         </div>
       </div>
-      {incoming.map((a) => {
+      {review.status !== "CLOSED" && (
+        <div className="card text-center text-slate-600">
+          Hasil penilaian dari Manager, Peer, dan Subordinate baru tersedia setelah Performance Review selesai.
+        </div>
+      )}
+      {review.status === "CLOSED" && incoming.map((a) => {
         const source = sourceRelationship(a.relationship),
           number = (counts.get(source) ?? 0) + 1;
         counts.set(source, number);
@@ -2301,9 +2370,7 @@ function ResultReport({
               <Badge v={source} />
             </div>
             <div className="mt-5 space-y-4">
-              {review.questions
-                .filter((q) => q.relationship === a.relationship)
-                .map((q) => (
+              {a.status !== "SUBMITTED" ? <p className="text-sm text-slate-500">Penilaian dari hubungan ini belum diisi.</p> : review.questions.filter((q) => q.relationship === a.relationship).map((q) => (
                   <div key={q.id} className="rounded-2xl bg-slate-50 p-4">
                     <p className="text-sm font-bold text-slate-600">{q.text}</p>
                     <p className="mt-2 font-black">
@@ -2316,9 +2383,9 @@ function ResultReport({
           </section>
         );
       })}
-      {!incoming.length && (
+      {review.status === "CLOSED" && !incoming.length && (
         <div className="card text-slate-500">
-          No submitted results are available.
+          Tidak ada assignment penilaian untuk user ini.
         </div>
       )}
     </div>
@@ -2326,7 +2393,8 @@ function ResultReport({
 }
 function Results({ data }: { data: AppData }) {
   const [reviewId, setReviewId] = useState(""),
-    [personId, setPersonId] = useState("");
+    [personId, setPersonId] = useState(""),
+    [reviewQuery, setReviewQuery] = useState("");
   const review = data.reviews.find((item) => item.id === reviewId),
     people = review
       ? [
@@ -2351,21 +2419,20 @@ function Results({ data }: { data: AppData }) {
       <Head title="Review Results" />
       <div className="card form-stack">
         <Field label="Performance Review">
-          <select
+          <input
+            type="search"
             className="input"
-            value={reviewId}
+            value={reviewQuery}
+            placeholder="Cari nama review..."
             onChange={(event) => {
-              setReviewId(event.target.value);
+              setReviewQuery(event.target.value);
               setPersonId("");
             }}
-          >
-            <option value="">Select review</option>
-            {data.reviews.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.title}
-              </option>
-            ))}
-          </select>
+          />
+          {reviewQuery.trim() && !review && <div className="picker-results mt-2 rounded-2xl border border-slate-200 p-2">
+            {data.reviews.filter((item) => item.title.toLowerCase().includes(reviewQuery.toLowerCase())).map((item) => <button type="button" key={item.id} onClick={() => { setReviewId(item.id); setReviewQuery(item.title); setPersonId(""); }}><b>{item.title}</b><small>{dateTime(item.endDate)}</small></button>)}
+            {!data.reviews.some((item) => item.title.toLowerCase().includes(reviewQuery.toLowerCase())) && <p className="p-2 text-sm text-slate-500">Review tidak ditemukan.</p>}
+          </div>}
         </Field>
         {review && (
           <Field label="Reviewed User">

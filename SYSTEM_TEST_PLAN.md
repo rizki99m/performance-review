@@ -190,7 +190,7 @@ The question order must be intentionally different per relationship to detect ma
 |---|---|---|---|
 | TPL-001 | High | Add Rating and Essay question to each relationship | Questions persist under the correct relationship |
 | TPL-002 | High | Edit question text/type | Changes persist and do not alter existing review snapshots |
-| TPL-003 | High | Delete template question | Question removed from template; existing snapshots unchanged |
+| TPL-003 | High | Delete template question referenced by an existing open, in-progress, and closed review | Question removed from template; each existing review snapshot and its answers remain unchanged; only the optional source-template reference is cleared |
 | TPL-004 | High | Move middle question Up then Down | Order swaps once per action and persists after reload |
 | TPL-005 | Medium | First/last ordering controls | Up disabled for first; Down disabled for last |
 | TPL-006 | High | Rapid repeated ordering clicks | Final order is deterministic; no duplicate/zero sort order |
@@ -273,6 +273,8 @@ The question order must be intentionally different per relationship to detect ma
 | SYNC-006 | Critical | Multiple peers submit | Results labelled Peer 1, Peer 2, etc., without names or stable identifiers |
 | SYNC-007 | Critical | Manager and Subordinate submit | Labels reflect source from Reviewee perspective, not stored inverse relationship |
 | SYNC-008 | Critical | Admin report vs User result | Answer content/grouping agree; both employee-facing outputs remain anonymous |
+| SYNC-009 | High | Review CLOSED with an incoming assignment still NOT_STARTED or DRAFT | Reviewee and Admin report retain the anonymous relationship entry and show an explicit unfilled explanation; no draft answer is exposed |
+| SYNC-010 | High | Review OPEN/IN_PROGRESS with reciprocal Manager, Peer, and Subordinate assignments | Each related reviewee can see only a neutral relationship-group notice; no answer, draft, or reviewer identity is exposed |
 
 ### 8.10 Review deletion and atomicity
 
@@ -280,10 +282,11 @@ The question order must be intentionally different per relationship to detect ma
 |---|---|---|---|
 | DEL-001 | High | User calls review DELETE | `403`; no change |
 | DEL-002 | High | Admin cancels custom confirmation | Review remains intact |
-| DEL-003 | Critical | Delete review with answers and submitted assignments | Review, assignments, answers, and snapshots removed together |
+| DEL-003 | Critical | Delete review with answers and submitted assignments | Review, assignments, answers, and snapshots removed together; review is absent for every related reviewer/reviewee, Admin list/dashboard, My Reviews, Reviews About Me, and Review Results |
 | DEL-004 | Critical | Force a failure during deletion in test DB | Transaction rolls back; no partial deletion |
 | DEL-005 | High | Delete nonexistent/invalid ID | Safe response; unrelated data unchanged |
 | DEL-006 | High | Two Admins delete same review concurrently | One effective deletion; second request fails safely/idempotently without collateral deletion |
+| DEL-007 | High | Delete an `OPEN`, `IN_PROGRESS`, and `CLOSED` review | Each deletion succeeds for Admin, removes all related data atomically, and leaves no review card/list/result for any related account |
 
 ### 8.11 Reports and PDF
 
@@ -292,7 +295,7 @@ The question order must be intentionally different per relationship to detect ma
 | RPT-001 | High | Select review and reviewee | Consolidated submitted results load correctly |
 | RPT-002 | Critical | Inspect report headings/content | No reviewer name, username, ID, or identifying metadata appears |
 | RPT-003 | High | Multiple feedback sources | Correct Manager/Peer/Subordinate grouping and sequence |
-| RPT-004 | High | Print at A4 portrait | Content readable; sections avoid harmful page breaks; controls/sidebar hidden |
+| RPT-004 | High | Print at A4 portrait from desktop and mobile viewport | Content readable; sections avoid harmful page breaks; sidebar, mobile header, Menu, navigation, Back, and Export controls are hidden |
 | RPT-005 | Critical | Save as PDF and inspect file | Employee name/review title allowed; reviewer identities absent |
 | RPT-006 | Medium | Long essays/many questions | Report wraps and paginates without clipping or horizontal overflow |
 | RPT-007 | Medium | No submitted results | Consistent empty state; no blank report ambiguity |
@@ -353,6 +356,8 @@ The reference application is inspected read-only. Conformance is pattern-based, 
 | DESIGN-007 | High | Dialogs and overlays | Delete confirmation, picker popup, mobile drawer | Backdrop, elevation, radius, spacing, close behavior, action hierarchy, and viewport containment are consistent |
 | DESIGN-008 | Medium | Empty, loading, and error states | All primary pages and asynchronous actions | States use a shared visual language and do not appear as unstyled browser/default output |
 | DESIGN-009 | Medium | Domain adaptation | Entire Performance Review app | No recruitment-specific entity, label, workflow, or permission leaks from Candidate Tracker |
+| DESIGN-010 | High | Mutation feedback | Create/edit/reorder/save/submit/delete flows | Uses application-styled success/failure acknowledgement; successful navigation waits for acknowledgement; failure remains on the current page |
+| DESIGN-011 | Medium | Navigation history | Sidebar/menu and browser Back | Previous application menu is restored without broken drawer/sidebar state |
 
 ### 9.5 Empty-state consistency
 
@@ -507,6 +512,15 @@ The RTM is the release-coverage control. A requirement is not considered covered
 | RTM-033 | Database contract: constraints, triggers, views, snapshot/answer validation | DR §27–29: safe feedback and integrity-visible behavior | DB assertions 1–15, ANS-008–ANS-009, REVQ-002–REVQ-004, DEL-003–DEL-004 | Planned |
 
 ### 13.1 RTM coverage review procedure
+
+#### RTM addendum — later V1 decisions
+
+| RTM ID | Product Requirement | Design Requirement | Test Case IDs | Planned coverage |
+|---|---|---|---|---|
+| RTM-034 | PR Reviews About Me: closed results retain unanswered anonymous sources; draft answers remain hidden | DR Reviews About Me: relationship grouping and unfilled treatment | SYNC-009, SYNC-010, RPT-001–RPT-003 | Planned |
+| RTM-035 | PR Operation Feedback: safe acknowledgement for mutation success/failure | DR Buttons/Dialogs: custom confirmation and acknowledgement pattern | DESIGN-010, UX-DRAFT-001, DEL-002 | Planned |
+| RTM-036 | PR Dashboard: OPEN/IN_PROGRESS work-list scope and Admin split | DR Admin/User Dashboard: practical list navigation | SYNC-001, SYNC-002, DESIGN-011 | Planned |
+| RTM-037 | PR deletion lifecycle: review cascade and template snapshot preservation | DR safe destructive feedback | DEL-003–DEL-007, TPL-003 | Planned |
 
 Before execution:
 

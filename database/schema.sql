@@ -120,6 +120,9 @@ CREATE TABLE performance_reviews (
     title VARCHAR(255) NOT NULL,
     description TEXT,
 
+    -- Absolute timestamps. Display timezone is handled by the client.
+    -- Review activity is allowed when:
+    -- start_at <= database_time < end_at
     start_at TIMESTAMPTZ NOT NULL,
     end_at TIMESTAMPTZ NOT NULL,
 
@@ -426,23 +429,49 @@ EXECUTE FUNCTION set_updated_at();
 
 
 -- =========================================================
--- PERFORMANCE REVIEW CLOSED_AT
+-- PERFORMANCE REVIEW STATUS FROM DATABASE TIME
+--
+-- Source of truth:
+-- PostgreSQL database time, NOT browser/device time.
+--
+-- Rules:
+-- database_time < start_at
+--     -> OPEN
+--
+-- start_at <= database_time < end_at
+--     -> IN_PROGRESS
+--
+-- database_time >= end_at
+--     -> CLOSED
+--
+-- end_at is exclusive for review activity/submission.
+--
+-- closed_at:
+-- CLOSED
+--     -> end_at
+--
+-- OPEN / IN_PROGRESS
+--     -> NULL
 -- =========================================================
 
-CREATE OR REPLACE FUNCTION maintain_performance_review_closed_at()
+CREATE OR REPLACE FUNCTION set_performance_review_status_from_schedule()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_database_time TIMESTAMPTZ := statement_timestamp();
 BEGIN
 
-    IF NEW.status = 'CLOSED'
-       AND OLD.status IS DISTINCT FROM 'CLOSED'
-    THEN
-        NEW.closed_at = COALESCE(NEW.closed_at, NOW());
+    IF v_database_time >= NEW.end_at THEN
+        NEW.status = 'CLOSED';
+        NEW.closed_at = NEW.end_at;
 
-    ELSIF NEW.status <> 'CLOSED'
-          AND OLD.status = 'CLOSED'
-    THEN
+    ELSIF v_database_time >= NEW.start_at THEN
+        NEW.status = 'IN_PROGRESS';
+        NEW.closed_at = NULL;
+
+    ELSE
+        NEW.status = 'OPEN';
         NEW.closed_at = NULL;
     END IF;
 
@@ -451,11 +480,85 @@ END;
 $$;
 
 
-CREATE TRIGGER trg_performance_review_closed_at
-BEFORE UPDATE OF status
+CREATE TRIGGER trg_performance_review_status_from_schedule
+BEFORE INSERT OR UPDATE OF start_at, end_at
 ON performance_reviews
 FOR EACH ROW
-EXECUTE FUNCTION maintain_performance_review_closed_at();
+EXECUTE FUNCTION set_performance_review_status_from_schedule();
+
+
+
+-- =========================================================
+-- SYNC PERFORMANCE REVIEW STATUSES
+--
+-- Neon may Scale to Zero when inactive.
+-- There is intentionally no pg_cron/background scheduler.
+--
+-- The application calls:
+--
+-- SELECT public.sync_performance_review_statuses();
+--
+-- before reading Performance Review data.
+--
+-- This updates only rows whose physical status/closed_at
+-- no longer matches the current database time.
+-- =========================================================
+
+CREATE OR REPLACE FUNCTION sync_performance_review_statuses()
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_database_time TIMESTAMPTZ := statement_timestamp();
+    v_updated_rows INTEGER;
+BEGIN
+
+    UPDATE performance_reviews
+    SET
+        status = CASE
+            WHEN v_database_time >= end_at
+                THEN 'CLOSED'
+
+            WHEN v_database_time >= start_at
+                THEN 'IN_PROGRESS'
+
+            ELSE 'OPEN'
+        END,
+
+        closed_at = CASE
+            WHEN v_database_time >= end_at
+                THEN end_at
+
+            ELSE NULL
+        END
+
+    WHERE
+        status IS DISTINCT FROM (
+            CASE
+                WHEN v_database_time >= end_at
+                    THEN 'CLOSED'
+
+                WHEN v_database_time >= start_at
+                    THEN 'IN_PROGRESS'
+
+                ELSE 'OPEN'
+            END
+        )
+        OR
+        closed_at IS DISTINCT FROM (
+            CASE
+                WHEN v_database_time >= end_at
+                    THEN end_at
+
+                ELSE NULL
+            END
+        );
+
+    GET DIAGNOSTICS v_updated_rows = ROW_COUNT;
+
+    RETURN v_updated_rows;
+END;
+$$;
 
 
 
@@ -494,6 +597,19 @@ BEGIN
 
     IF v_status IS NULL THEN
         RAISE EXCEPTION 'Performance Review not found.';
+    END IF;
+
+    -- Deleting a template only clears this optional provenance field through
+    -- its foreign key. It does not change the historical question snapshot.
+    IF TG_OP = 'UPDATE'
+       AND NEW.source_template_question_id IS DISTINCT FROM OLD.source_template_question_id
+       AND NEW.performance_review_id = OLD.performance_review_id
+       AND NEW.relationship_type = OLD.relationship_type
+       AND NEW.question_text = OLD.question_text
+       AND NEW.question_type = OLD.question_type
+       AND NEW.sort_order = OLD.sort_order
+    THEN
+        RETURN NEW;
     END IF;
 
     IF v_status <> 'OPEN'

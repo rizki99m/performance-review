@@ -135,6 +135,8 @@ Do not show Admin-only navigation to normal Users.
 
 The desktop sidebar can collapse and expand. Both desktop and mobile sidebars must scroll independently when navigation exceeds the viewport, without making profile and logout controls unreachable.
 
+Menu navigation participates in browser history so Back returns to the prior application menu. The mobile drawer must include an explicit close control.
+
 ---
 
 ## 6. Login Page
@@ -224,6 +226,8 @@ Destructive actions should be visually distinct and used carefully.
 
 Do not use native browser alert or confirm dialogs. Destructive confirmation must use an application-styled modal with backdrop, clear title, consequence text, Cancel action, destructive action, and loading state.
 
+Non-destructive confirmations, such as review submission, use the same dialog pattern with `Submit` and `Cancel` actions (never a destructive `Delete` label). Successful and failed mutations use the shared acknowledgement popup pattern; failed mutations keep the current form/page visible.
+
 ---
 
 ## 9. Status Badges
@@ -235,6 +239,8 @@ Use consistent status badges across the application.
 - OPEN
 - IN_PROGRESS
 - CLOSED
+
+Performance Review status is read-only/system-managed in the UI. Admin configuration screens may display the current status badge, but must not provide a manual status selector. Status comes from the backend/database schedule calculation.
 
 ### Review Assignment Status
 
@@ -274,8 +280,9 @@ Columns may include:
 Columns may include:
 
 - Title
-- Start Date
-- Deadline
+- Schedule
+  - Start Date with time and timezone
+  - Due Date with time and timezone
 - Status
 - Progress
 - Actions
@@ -328,8 +335,10 @@ Fields:
 
 - Title
 - Description
-- Start Date
-- End Date / Deadline
+- Start Date & Time
+- End Date / Due Date & Time
+
+Use local `datetime-local` inputs for Admin convenience. The selected local time must be converted to an absolute timestamp before it is sent to the backend. Status is displayed separately as a read-only badge; it is not an editable form field.
 
 ---
 
@@ -519,6 +528,9 @@ Review: Andi
 Relationship: Peer
 Performance Review H2 2026
 
+Start Date: 20 Aug 2026, 09:00 WIB
+Due Date:   31 Aug 2026, 17:00 WIB
+
 Progress: 7 / 10
 
 Question 1
@@ -530,7 +542,7 @@ Question 2
 [ Save Draft ]          [ Submit Review ]
 ```
 
-The user should always understand whether their work is saved.
+The user should always understand whether their work is saved and when the review starts/ends. The questionnaire screen must visibly show Start Date and Due Date, each with date, time, and timezone.
 
 Possible save states:
 
@@ -572,7 +584,7 @@ A confirmation dialog is acceptable.
 
 Example:
 
-`Submit this review? You can still edit it until the deadline.`
+`Submit this review? You can still edit it until the Due Date.`
 
 This message is important because submitted reviews are not immediately locked.
 
@@ -580,14 +592,14 @@ This message is important because submitted reviews are not immediately locked.
 
 ## 21. Editing a Submitted Review
 
-Before the deadline, a submitted review should still show an `Edit Review` action.
+Before the exclusive Due Date, a submitted review should still show an `Edit Review` action while the Performance Review is `IN_PROGRESS`.
 
 The UI should clearly communicate:
 
 - Submitted
-- Editable until `<deadline>`
+- Editable until `<Due Date with time and timezone>`; the Due Date is exclusive, so exactly at that instant the review is no longer editable
 
-After the deadline or when the Performance Review is closed:
+At the Due Date or after the Performance Review becomes `CLOSED`:
 
 - hide/disable edit controls
 - show read-only answers
@@ -609,6 +621,8 @@ Example:
 
 Once CLOSED, show the submitted reviews in read-only form.
 
+Show every assigned source relationship after closure. Where a source has not submitted, retain its anonymous relationship card and display a short empty/unfilled explanation instead of removing it. Before closure, show only a neutral availability explanation and relationship grouping—never answers, drafts, or reviewer identities.
+
 The Reviewee must not be able to edit incoming reviews.
 
 ---
@@ -625,7 +639,7 @@ Useful information may include:
 - drafts
 - submitted
 - completion percentage
-- approaching deadlines
+- approaching Due Dates
 
 Avoid adding advanced charts unless they materially improve usability.
 
@@ -643,7 +657,7 @@ The User dashboard should primarily answer:
 
 - What reviews do I need to complete?
 - What have I already submitted?
-- What is the deadline?
+- What is the Due Date and time?
 - Are review results about me available?
 
 Recommended review cards/list items may show:
@@ -651,7 +665,7 @@ Recommended review cards/list items may show:
 - Reviewee name
 - Relationship
 - Performance Review title
-- Deadline
+- Due Date with time and timezone
 - Assignment status
 - Progress
 - Available action
@@ -667,6 +681,10 @@ Ensure important workflows remain usable on smaller screens.
 Prioritize desktop usability for Admin-heavy configuration screens, but do not allow mobile layouts to break.
 
 Tables may adapt into horizontally scrollable or stacked layouts if consistent with the reference project.
+
+### Print / PDF behavior
+
+The Review Result print layout must hide application chrome and controls, including the desktop sidebar, mobile header, Menu button, navigation, Back, and Export PDF controls. Browser-generated headers and footers are outside application control and may be disabled by the user in the print dialog.
 
 ---
 
@@ -708,8 +726,8 @@ Examples:
 - End Date must be after Start Date.
 - This reviewer is already assigned.
 - Please answer all questions before submitting.
-- This Performance Review is already closed.
-- The deadline has passed.
+- This review is not editable at this time.
+- The Due Date has passed.
 
 Avoid exposing technical database or server errors directly to the User.
 
@@ -763,3 +781,35 @@ Adapt familiar UI patterns to the new Performance Review domain.
 The design target is:
 
 **Same company. Same visual family. Different product.**
+
+---
+## 31. Date, Time, and Timezone Presentation
+
+All user-facing Performance Review schedule timestamps must show **date + time + timezone**. This applies to at least:
+
+- Admin Dashboard review cards
+- Performance Reviews list/table
+- Performance Review configuration/status view
+- My Reviews list
+- the active review questionnaire screen
+- Review Result / print-ready report
+
+Formatting must use the browser's resolved IANA timezone, for example `Asia/Jakarta`, `Asia/Makassar`, or `Asia/Jayapura`. Do not hardcode timezone offsets or manually add/subtract hours.
+
+`datetime-local` inputs are appropriate for editing schedule values because they represent the Admin's local wall-clock time, but API requests must send an unambiguous absolute timestamp.
+
+Use **Due Date** consistently for `end_at` in user-facing copy. Due Date is exclusive for review activity.
+
+---
+## 32. Automatic Status Refresh UX
+
+The UI must reflect database-authoritative status changes without requiring a manual browser refresh. Use lightweight application/page-level polling approximately every 10 seconds for relevant Performance Review data.
+
+Also refetch when:
+
+- the window receives focus
+- the browser tab becomes visible again
+
+Do not reload the entire page just to refresh status. Do not create one interval per card or small component. Clean up intervals and event listeners when the owning component unmounts.
+
+The UI must never change authoritative Performance Review status purely from a local countdown or browser clock. When a visual countdown reaches zero, refetch from the backend and render the returned status.

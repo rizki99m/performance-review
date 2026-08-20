@@ -85,6 +85,12 @@ Do not make the new application depend on runtime asset paths inside `candidate-
 - Use the current project's existing stack and conventions unless explicitly instructed otherwise.
 - Build reusable UI where it meaningfully reduces duplication.
 - Keep Admin/HR behavior separate from User behavior.
+- Treat PostgreSQL database time as the authoritative clock for Performance Review schedule, status, deadline eligibility, and authorization.
+- Never use the browser/device clock (`Date.now()`, `new Date()`, or manually adjusted offsets) as the business-rule authority for whether a review has started, is editable, can be saved/submitted, or is closed.
+- Performance Review status is system-managed from `start_at` and `end_at`; Admin/UI must not manually set `OPEN`, `IN_PROGRESS`, or `CLOSED`.
+- Treat `end_at` as exclusive for review activity: `start_at <= database_time < end_at`. At exactly `end_at`, save/submit/edit operations must be rejected.
+- Keep `start_at` and `end_at` as absolute `TIMESTAMPTZ` values. Display dates/times in the browser's IANA timezone and include both time and timezone in user-facing schedule/deadline text.
+- Use lightweight page-level refetching for status freshness (approximately every 10 seconds, plus browser focus/visibility refresh) instead of full-page reloads or new realtime infrastructure.
 
 ## Before Coding
 
@@ -94,7 +100,7 @@ For any meaningful feature:
 2. Inspect the equivalent visual patterns in `candidate-tracker` when applicable.
 3. Follow `DESIGN_REQUIREMENTS.md`.
 4. Implement only the requested scope.
-5. Verify that permissions and deadline rules are enforced correctly.
+5. Verify that permissions and deadline rules are enforced correctly using PostgreSQL database time, not browser/device time.
 
 ## Product Roles
 
@@ -127,13 +133,19 @@ Reviewer identity confidentiality and print-ready PDF result export are part of 
 
 Admin accounts may participate as Reviewers and Reviewees while retaining administrative capabilities.
 
+- Use application-styled dialogs and acknowledgement popups; never use native browser `alert`, `confirm`, or `prompt`.
+- Successful create, edit, reorder, draft-save, submit, and delete operations must show an explicit success acknowledgement before navigation changes. Failed operations must keep the current page open and show a safe failure acknowledgement.
+- Deleting a Performance Review must atomically remove its answers, assignments, and question snapshots so it disappears for every related account. Deleting a template question must preserve existing review snapshots.
+- Reviews About Me reveals relationship groups and results only after closure; show unanswered assignments as unfilled without revealing drafts or reviewer identity.
+- Dashboard work lists include `OPEN` and `IN_PROGRESS` assignments only; never `CLOSED` items.
+
 ## Database Source of Truth
 
 Before making any database-related implementation changes, always read:
 
 - `database/schema.sql`
 
-The SQL file is the authoritative database contract.
+The SQL file is the authoritative database contract and should document the database functions/triggers already deployed in Neon.
 
 Do not invent, rename, or alter database tables, columns, types, constraints,
 relationships, functions, triggers, or views unless explicitly instructed.
@@ -148,6 +160,30 @@ The actual Neon connection string must only come from:
 stored in `.env.local`.
 
 Never commit `.env.local` or any real database credentials.
+
+### Performance Review Time and Status Rules
+
+The deployed Neon database already owns the schedule/status lifecycle. Preserve these rules unless explicitly instructed otherwise:
+
+- `database_time < start_at` -> `OPEN`
+- `start_at <= database_time < end_at` -> `IN_PROGRESS`
+- `database_time >= end_at` -> `CLOSED`
+- `closed_at = end_at` when closed; otherwise `closed_at = NULL`
+- `public.sync_performance_review_statuses()` synchronizes the physical `performance_reviews.status` value using PostgreSQL time.
+- `public.set_performance_review_status_from_schedule()` and trigger `trg_performance_review_status_from_schedule` recalculate status when `start_at` or `end_at` changes.
+- Neon may scale to zero when idle. Do not add `pg_cron` or a database background scheduler for status changes. On relevant Performance Review reads, wake/sync the database and return an effective status calculated with PostgreSQL time.
+- Save, submit, finalize, or other editable-only operations must validate the active schedule directly in SQL using PostgreSQL time. Do not rely only on the stored physical status.
+- When an Admin changes the schedule, refetch the Performance Review and trust the status returned by the backend/database trigger.
+
+### Frontend Date/Time and Refresh Rules
+
+- `datetime-local` inputs represent the Admin's local wall-clock time; convert them to an unambiguous absolute ISO timestamp before sending to the backend.
+- User-facing Start Date, Due Date, schedule, and result timestamps must display date, time, and the browser-resolved timezone.
+- Use `Intl.DateTimeFormat().resolvedOptions().timeZone` / native IANA timezone support. Do not hardcode `UTC+7`, `UTC+8`, `UTC+9`, or manually add hours.
+- The review questionnaire screen must visibly show Start Date and Due Date with time/timezone.
+- The frontend should refetch relevant Performance Review data about every 10 seconds while the app is open and also when the tab/window becomes active again. Clean up intervals/listeners on unmount.
+- Polling must be owned by the page/application data layer, not by every small child component.
+- When a database trigger/function changes in `database/schema.sql`, apply the compatible change to the authorized Neon development database and record the deployment in test/report documentation.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
